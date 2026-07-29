@@ -18,11 +18,22 @@ extract_raw_pages() does that; clean_from_raw_pages() runs the rest once
 all pages are assembled. clean_document() is a single-call convenience
 wrapper for documents short enough not to need batching.
 """
+import logging
 import re
 import unicodedata
 
 import pdfplumber
 import wordninja
+
+# pdfminer (which pdfplumber sits on top of) logs WARNING-level messages to
+# stderr for cosmetic PDF-generation quirks it can't fully parse -- missing
+# FontBBox on a font descriptor, a pattern-fill color reference (e.g. "/P1")
+# where a plain gray float is expected, etc. These do not raise exceptions
+# and do not drop any extracted text; pdfminer just skips that one detail
+# and continues. Common on SEC filings with letterhead/logo graphics.
+# Silenced here because at 300-file batch scale this noise buries the
+# actual per-file "ok"/"FAILED" progress lines in run_batch.py's output.
+logging.getLogger("pdfminer").setLevel(logging.ERROR)
 
 # Confirmed real defect: some source PDFs (e.g. ACADIA's 2018 10-K) extract
 # with no space characters between words at all across large sections --
@@ -63,6 +74,38 @@ FRONT_MATTER_RE_NOSPACE = re.compile(
 DEHYPHENATE_RE = re.compile(r"([a-z])-\n([a-z])")
 WHITESPACE_RE = re.compile(r"[ \t]+")
 MULTI_NEWLINE_RE = re.compile(r"\n{3,}")
+
+# Dot-leader fill ("March 31, 2016 ...................... $ 7.64") -- SEC
+# filings use this for both real label/value data rows and table-of-contents
+# entries. Collapsing a long run down to a short fixed marker keeps the
+# label/value association (nothing on either side of the run is touched)
+# while removing the wasted space -- a single TOC-style line can otherwise
+# burn 50+ characters of a chunk's word budget on literal periods.
+DOT_RUN_RE = re.compile(r"\.(?:\s?\.){3,}")
+DOT_RUN_REPLACEMENT = " ... "
+
+# Table-of-contents detection: a TOC line is "<label> <dot leader> <ONE
+# trailing number>" (the page number) -- exactly the same dot-leader
+# convention real data rows use, distinguished only by having a single
+# trailing value instead of 2+ (confirmed in pre_procesing_1: this is what
+# separates "Item 1. Business.......1" from "March 31, 2016 ...... $7.64
+# $5.32"). A page where several lines match that single-value pattern is a
+# table of contents, not real content -- excluded from chunking entirely
+# (see clean_from_raw_pages), since it duplicates section titles already
+# captured via item/part structure detection and adds no informational
+# value on its own.
+TOC_LINE_RE = re.compile(r"^.+?" + DOT_RUN_RE.pattern + r"\s*\d+\s*$")
+TOC_MIN_MATCHING_LINES = 3
+
+
+def is_toc_page(text: str) -> bool:
+    lines = (text or "").split("\n")
+    hits = sum(1 for ln in lines if TOC_LINE_RE.match(ln.strip()))
+    return hits >= TOC_MIN_MATCHING_LINES
+
+
+def collapse_dot_leaders(text: str) -> str:
+    return DOT_RUN_RE.sub(DOT_RUN_REPLACEMENT, text)
 
 
 def extract_raw_pages(pdf_path: str, page_start: int = 1, page_end: int = None):
@@ -167,28 +210,85 @@ def clean_from_raw_pages(raw_pages: list, pdf_path: str):
     raw_pages must be sorted by page_number and cover the whole document
     (1..N with no gaps) -- caller's responsibility when merging batches.
 
-    Returns (full_text, cleaned_pages, report) -- same shape as
-    clean_document().
+    Returns (full_text, cleaned_pages, page_offsets, report):
+      full_text: str, built from BODY pages only (cover page and any
+        table-of-contents pages excluded -- see is_toc_page above; they
+        add no retrievable value and were wasting chunk budget).
+      cleaned_pages: list of dicts {page_number, text, page_type} for
+        EVERY page after the front-matter cutoff (cover/toc included, so
+        callers needing e.g. cover-page text for metadata still have it --
+        only full_text/chunking skips non-body pages).
+      page_offsets: list of (start_char, end_char, page_number) for each
+        body page's span within full_text -- lets a chunk's character
+        range be mapped back to its REAL source page number(s) exactly,
+        instead of the proportional-fraction estimate used previously.
+      report: dict, same fields as before plus n_cover_pages_excluded /
+        n_toc_pages_excluded.
     """
     pages_text = [text for _, text in raw_pages]
+    page_numbers = [pn for pn, _ in raw_pages]
 
     cutoff_page, marker_found = find_front_matter_cutoff(pages_text)
-    body_pages = pages_text[cutoff_page:]
+    body_text = pages_text[cutoff_page:]
+    body_page_numbers = page_numbers[cutoff_page:]
 
-    boilerplate, repeat_report = find_repeated_boilerplate_lines(body_pages)
+    boilerplate, repeat_report = find_repeated_boilerplate_lines(body_text)
 
     cleaned_pages = []
+    page_offsets = []
     total_deglued = 0
-    for text in body_pages:
-        text = strip_boilerplate(text, boilerplate)
+    n_toc_excluded = 0
+    running_offset = 0
+    for i, (page_number, text) in enumerate(zip(body_page_numbers, body_text)):
+        # Only the page find_front_matter_cutoff actually MATCHED on counts
+        # as "cover" -- when marker_found is False, cutoff_page is just the
+        # 0-fallback (see find_front_matter_cutoff), not a real detected
+        # cover page, and treating body_text[0] as "the cover page" in that
+        # case would wrongly exclude real content. Confirmed on PRTK_2015
+        # (the 3-page non-10-K notice, no real cover marker at all): before
+        # this check, its only substantive page was being discarded as a
+        # false "cover page".
+        page_is_cover = marker_found and (i == 0)
+
+        # The cover page is exempted from boilerplate stripping. The
+        # registrant name (e.g. "Blackbaud, Inc.") legitimately repeats as
+        # a running header/footer on most BODY pages -- which is exactly
+        # what makes find_repeated_boilerplate_lines correctly flag it as
+        # boilerplate -- but stripping it from the COVER page too deletes
+        # the one place it's load-bearing content, not noise. Confirmed
+        # real case: blackbaud-inc/NASDAQ_BLKB_2018.pdf -- "Blackbaud,
+        # Inc." was the only line detected as boilerplate, and stripping it
+        # from the cover page silently deleted the registrant name, so
+        # REGISTRANT_NAME_RE fell through to capturing the next line up
+        # ("Commission file number: 000-50600") instead -- confirmed the
+        # same mechanism on bloomin-brands-inc ("BLOOMIN' BRANDS, INC.").
+        # TOC check runs on boilerplate-stripped but otherwise raw text --
+        # dot-leader lines need to still be intact to detect, so this must
+        # happen before collapse_dot_leaders.
+        if not page_is_cover:
+            text = strip_boilerplate(text, boilerplate)
+        page_is_toc = is_toc_page(text)
+
         text = clean_unicode(text)
         text = dehyphenate(text)
         text, n_fixed = deglue_words(text)
         total_deglued += n_fixed
+        text = collapse_dot_leaders(text)
         text = normalize_whitespace(text)
-        cleaned_pages.append(text)
 
-    full_text = "\n\n".join(cleaned_pages)
+        page_type = "cover" if page_is_cover else ("toc" if page_is_toc else "body")
+        if page_type == "toc":
+            n_toc_excluded += 1
+        cleaned_pages.append({"page_number": page_number, "text": text, "page_type": page_type})
+
+        if page_type == "body":
+            start = running_offset
+            # matches how full_text is joined below: "\n\n" between pages
+            end = start + len(text)
+            page_offsets.append((start, end, page_number))
+            running_offset = end + 2  # +2 for the "\n\n" joiner
+
+    full_text = "\n\n".join(p["text"] for p in cleaned_pages if p["page_type"] == "body")
     word_count = len(full_text.split())
 
     report = {
@@ -200,10 +300,25 @@ def clean_from_raw_pages(raw_pages: list, pdf_path: str):
         "boilerplate_sample": [line for line, _ in repeat_report[:5]],
         "glued_tokens_deglued": total_deglued,
         "flagged_glued_text": total_deglued > 20,  # heuristic: this many hits means the doc has the defect broadly, not just an isolated identifier
+        "n_cover_pages_excluded": sum(1 for p in cleaned_pages if p["page_type"] == "cover"),
+        "n_toc_pages_excluded": n_toc_excluded,
         "word_count": word_count,
         "flagged_low_word_count": word_count < 500,
     }
-    return full_text, cleaned_pages, report
+    return full_text, cleaned_pages, page_offsets, report
+
+
+def page_number_for_offset(page_offsets: list, char_offset: int):
+    """Exact page lookup for a character offset into full_text (see
+    clean_from_raw_pages), replacing the old proportional-fraction
+    estimate. Returns None if out of range (shouldn't happen for offsets
+    actually taken from full_text, but callers should not assume)."""
+    for start, end, page_number in page_offsets:
+        if start <= char_offset < end:
+            return page_number
+    if page_offsets and char_offset >= page_offsets[-1][1]:
+        return page_offsets[-1][2]  # end-of-document edge case
+    return None
 
 
 def clean_document(pdf_path: str):
@@ -221,7 +336,7 @@ if __name__ == "__main__":
     import sys
 
     path = sys.argv[1]
-    full_text, pages, report = clean_document(path)
+    full_text, pages, page_offsets, report = clean_document(path)
     print(report)
     print("---first 500 chars of cleaned body---")
     print(full_text[:500])
