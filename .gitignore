@@ -1,2 +1,34 @@
 .cursor/
 frontend/docs/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Environment / credentials
+.env
+.env.local
+
+# Virtual environments
+.venv/
+venv/
+
+# Logs
+*.log
+
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+build/
+
+# RAG downloaded documents (large files, not committed)
+rag/**/data/
