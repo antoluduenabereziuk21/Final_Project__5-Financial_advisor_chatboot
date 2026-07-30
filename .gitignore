@@ -1,0 +1,51 @@
+# Environment
+.env
+.env.local
+.env.example
+
+# Virtual environments
+.venv/
+venv/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+.pytest_cache/
+*.whl
+dist/
+build/
+
+# Data / outputs
+data/
+output/
+output_batch/
+rag/dataset/data/
+rag/ingestion/output/
+rag/embeddings/
+rag/**/data/
+
+# Pre-processing generated files
+pre_procesing_2/output_batch/
+pre_procesing_2/mismatch_check.csv
+
+# Downloaded / generated
+downolad_files/corpus_profile.csv
+
+# Logs
+*.log
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+$RECYCLE.BIN/
+
+# IDE / Editor
+.vscode/
+.idea/
+.cursor/
+*.swp
+*.swo
+*~
