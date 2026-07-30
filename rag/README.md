@@ -27,9 +27,12 @@ rag/
 │   ├── repository.py      Insert, search_similar, init_schema
 │   ├── models.py          ChunkRecord, SearchResult, SearchParams
 │   └── init_db.sql        Schema SQL rag_documents + índices HNSW/GIN
-├── embeddings/            (pendiente) Generación de embeddings
-├── retrieval/             (pendiente) Búsqueda semántica + filtros
-├── llm/                   (pendiente) Generación con LLM
+├── embeddings/            Generación de embeddings con all-MiniLM-L6-v2
+│   └── generate.py        embed_text(), embed_batch() — 384 dimensiones
+├── retrieval/             Búsqueda semántica + filtros por metadata
+│   └── retriever.py       retrieve() con post-filter y formateo de sources[]
+├── llm/                   Generación con LLM + confidence_flag
+│   └── generator.py       Prompt, respuesta, flags: ok / low_confidence / entity_not_found / subjective_no_verdict
 ├── app.py                 FastAPI entrypoint para el servicio RAG
 ├── Dockerfile             Imagen Docker del servicio RAG
 ├── init_db.sh             Script: levanta pgvector + pgAdmin con Docker
@@ -117,7 +120,7 @@ PDF 10-K/20-F
        │
        ▼
 ┌─────────────┐
-│ embeddings  │  (pendiente) Genera vectores con modelo de embeddings
+│ embeddings  │  Genera vectores 384-d con all-MiniLM-L6-v2
 └──────┬──────┘
        │
        ▼
@@ -128,12 +131,12 @@ PDF 10-K/20-F
        │
        ▼
 ┌─────────────┐
-│  retrieval  │  (pendiente) Query → embedding → top-k chunks
+│  retrieval  │  Embed pregunta + filtros metadata → top-k chunks
 └──────┬──────┘
        │
        ▼
 ┌─────────────┐
-│    LLM      │  (pendiente) Contexto + pregunta → respuesta
+│    LLM      │  Prompt con contexto → respuesta + confidence_flag
 └─────────────┘
 ```
 
@@ -174,9 +177,63 @@ docker run -p 8000:8000 --env-file .env rag-service
 | Método | Ruta | Descripción |
 |---|---|---|
 | GET | `/health` | Estado del servicio + documentos indexados |
+| POST | `/query` | Pregunta → retrieval → respuesta del LLM (endpoint principal) |
+| POST | `/search` | Búsqueda semántica directa (legacy, devuelve sources sin LLM) |
 | POST | `/ingest` | Procesar un PDF e indexarlo en la DB vectorial |
-| POST | `/search` | Búsqueda semántica sobre los chunks indexados |
-| POST | `/chat` | Pregunta → retrieval → respuesta del LLM |
+
+### POST /query
+
+Request:
+```json
+{
+  "question": "¿Cuál fue el revenue de NCLH en 2020?",
+  "session_id": "abc123",
+  "filters": {
+    "ticker": ["NCLH"],
+    "company": ["Norwegian Cruise Line"],
+    "fiscal_year": 2020
+  },
+  "top_k": 5
+}
+```
+
+Response:
+```json
+{
+  "answer": "Norwegian Cruise Line reportó un revenue de $X millones en 2020...",
+  "confidence_flag": "ok",
+  "sources": [
+    {
+      "chunk_id": 42,
+      "company": "Norwegian Cruise Line",
+      "ticker": "NCLH",
+      "fiscal_year": 2020,
+      "form_type": "10-K",
+      "accounting_standard": "US GAAP",
+      "canonical_section": "mdna",
+      "source_file": ".../NCLH_2020.pdf",
+      "page_start": 45,
+      "page_end": 46,
+      "relevance_score": 0.87,
+      "text_snippet": "Revenue decreased by $X million..."
+    }
+  ],
+  "retrieval_meta": {
+    "filters_applied": { "ticker": ["NCLH"], "fiscal_year": 2020 },
+    "chunks_considered": 5,
+    "model": "all-MiniLM-L6-v2"
+  }
+}
+```
+
+#### confidence_flag
+
+| Flag | Significado |
+|---|---|
+| `ok` | Respuesta generada con suficiente certeza |
+| `low_confidence` | Scores de similitud bajos — respuesta puede ser imprecisa |
+| `entity_not_found` | No se encontraron chunks para la empresa/año solicitados |
+| `subjective_no_verdict` | Pregunta subjetiva — se presentan datos sin veredicto |
 
 ---
 
@@ -189,6 +246,8 @@ docker run -p 8000:8000 --env-file .env rag-service
 | `VECTOR_DB_USER` | `ml_engineer` | Usuario de la base de datos |
 | `VECTOR_DB_PASSWORD` | `ml_password_2026` | Contraseña |
 | `VECTOR_DB_NAME` | `financial_rag_vectors` | Nombre de la base de datos |
+| `OPENAI_API_KEY` | — | API key para OpenAI (si se usa GPT como LLM) |
+| `OPENAI_MODEL` | `gpt-4o-mini` | Modelo de OpenAI para generación |
 
 ---
 
@@ -197,6 +256,8 @@ docker run -p 8000:8000 --env-file .env rag-service
 - **pdfplumber** — Extracción de texto de PDFs
 - **haystack-ai** — Chunking y pipelines de NLP
 - **wordninja** — Segmentación de tokens sin espacios
+- **sentence-transformers** — Embeddings con all-MiniLM-L6-v2 (384 dim)
 - **asyncpg** — Conexión a PostgreSQL asíncrona
 - **boto3** — Descarga del dataset desde S3
+- **openai** — LLM para generación de respuestas
 - **FastAPI + uvicorn** — Servicio REST (contenedor Docker)

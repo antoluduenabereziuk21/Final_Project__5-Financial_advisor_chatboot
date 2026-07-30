@@ -27,3 +27,4 @@ class SearchParams:
     query_embedding: list[float]
     top_k: int = 5
     metadata_filter: dict[str, Any] | None = None
+

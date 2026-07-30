@@ -1,15 +1,41 @@
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 
+from embeddings.generate import embed_text
+from llm.generator import configure as configure_llm, generate
+from retrieval.retriever import retrieve
 from vector_store.client import VectorDbClient
-from vector_store.models import SearchParams
 from vector_store.repository import VectorRepository
 
+# Ensure ingestion/ is on sys.path so orchestrate.py's local imports work
+_ingestion_dir = str(Path(__file__).parent / "ingestion")
+if _ingestion_dir not in sys.path:
+    sys.path.insert(0, _ingestion_dir)
+
 app = FastAPI(title="RAG Service", version="0.1.0")
+
+
+class QueryRequest(BaseModel):
+    question: str
+    session_id: str | None = None
+    filters: dict | None = None
+    top_k: int = 5
+
+
+class QueryResponse(BaseModel):
+    answer: str
+    confidence_flag: str
+    sources: list[dict]
+    retrieval_meta: dict
+
+
+class IngestRequest(BaseModel):
+    pdf_path: str
 
 
 @app.on_event("startup")
@@ -18,25 +44,12 @@ async def startup():
     await client.connect()
     app.state.db = client
     app.state.repo = VectorRepository(client)
+    configure_llm("openai")
 
 
 @app.on_event("shutdown")
 async def shutdown():
     await app.state.db.close()
-
-
-class SearchRequest(BaseModel):
-    query_embedding: list[float]
-    top_k: int = 5
-    metadata_filter: dict | None = None
-
-
-class IngestRequest(BaseModel):
-    pdf_path: str
-
-
-class SearchResponse(BaseModel):
-    results: list[dict]
 
 
 @app.get("/health")
@@ -51,28 +64,58 @@ async def ingest(body: IngestRequest):
     if not path.exists():
         raise HTTPException(404, f"PDF not found: {body.pdf_path}")
 
-    from ingestion.orchestrate import run_one
+    from orchestrate import run_one
 
     result, _ = run_one(body.pdf_path)
-    return {"message": "Ingestion complete", "chunks": result["n_chunks_word_count"]}
+    chunks = result["chunks_word_count"]
+
+    chunk_records = [
+        {
+            "content": c["text"],
+            "embedding": embed_text(c["text"]),
+            "metadata": c.get("metadata", {}),
+        }
+        for c in chunks
+    ]
+    ids = await app.state.repo.insert_chunks_batch_raw(chunk_records)
+    return {"message": "Ingestion complete", "chunks_indexed": len(ids)}
 
 
-@app.post("/search", summary="Semantic search over indexed chunks")
-async def search(body: SearchRequest):
-    params = SearchParams(
-        query_embedding=body.query_embedding,
+@app.post("/query", summary="Ask a question to the financial RAG pipeline")
+async def query(body: QueryRequest):
+    filters = body.filters or {}
+    ticker = filters.get("ticker")
+    company = filters.get("company")
+    fiscal_year = filters.get("fiscal_year")
+
+    sources, retrieval_meta = await retrieve(
+        repo=app.state.repo,
+        question=body.question,
+        ticker=ticker,
+        company=company,
+        fiscal_year=fiscal_year,
         top_k=body.top_k,
-        metadata_filter=body.metadata_filter,
     )
-    results = await app.state.repo.search_similar(params)
-    return SearchResponse(
-        results=[
-            {
-                "id": r.id,
-                "content": r.content,
-                "metadata": r.metadata,
-                "similarity": r.similarity,
-            }
-            for r in results
-        ]
+
+    answer, confidence_flag = await generate(body.question, sources)
+
+    return QueryResponse(
+        answer=answer,
+        confidence_flag=confidence_flag,
+        sources=sources,
+        retrieval_meta=retrieval_meta,
     )
+
+
+@app.post("/search", summary="Direct semantic search (legacy)")
+async def search(body: QueryRequest):
+    filters = body.filters or {}
+    sources, retrieval_meta = await retrieve(
+        repo=app.state.repo,
+        question=body.question,
+        ticker=filters.get("ticker"),
+        company=filters.get("company"),
+        fiscal_year=filters.get("fiscal_year"),
+        top_k=body.top_k,
+    )
+    return {"sources": sources, "retrieval_meta": retrieval_meta}

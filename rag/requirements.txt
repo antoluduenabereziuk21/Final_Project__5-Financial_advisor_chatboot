@@ -6,9 +6,15 @@ wordninja>=2.0
 # Vector store
 asyncpg>=0.30
 
+# Embeddings
+sentence-transformers>=3.0
+
 # REST API
 fastapi>=0.115
 uvicorn>=0.34
+
+# LLM
+openai>=1.0
 
 # Utilities
 python-dotenv>=1.0
