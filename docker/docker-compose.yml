@@ -1,0 +1,49 @@
+version: '3.8'
+
+services:
+  postgres_vector:
+    image: pgvector/pgvector:pg16
+    container_name: rag_vector_db
+    restart: always
+    environment:
+      POSTGRES_USER: ${VECTOR_DB_USER:-ml_engineer}
+      POSTGRES_PASSWORD: ${VECTOR_DB_PASSWORD:-ml_password_2026}
+      POSTGRES_DB: ${VECTOR_DB_NAME:-financial_rag_vectors}
+    ports:
+      - "${VECTOR_DB_PORT:-5432}:5432"
+    volumes:
+      - ml_vector_data:/var/lib/postgresql/data
+    networks:
+      - rag_network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${VECTOR_DB_USER:-ml_engineer} -d ${VECTOR_DB_NAME:-financial_rag_vectors}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: rag_pgadmin
+    restart: always
+    environment:
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_EMAIL:-ai_team@empresa.com}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASSWORD:-admin_password_2026}
+    ports:
+      - "${PGADMIN_PORT:-8080}:80"
+    volumes:
+      - ml_pgadmin_data:/var/lib/pgadmin
+    networks:
+      - rag_network
+    depends_on:
+      postgres_vector:
+        condition: service_healthy
+
+volumes:
+  ml_vector_data:
+    driver: local
+  ml_pgadmin_data:
+    driver: local
+
+networks:
+  rag_network:
+    driver: bridge
