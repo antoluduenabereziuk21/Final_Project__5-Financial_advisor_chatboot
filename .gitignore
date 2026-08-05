@@ -1,13 +1,13 @@
-.cursor/
-frontend/docs/
-
 # OS
 .DS_Store
 Thumbs.db
+desktop.ini
+$RECYCLE.BIN/
 
-# IDE
+# IDE / Editor
 .vscode/
 .idea/
+.cursor/
 *.swp
 *.swo
 *~
@@ -15,10 +15,19 @@ Thumbs.db
 # Environment / credentials
 .env
 .env.local
+.env.example
 
 # Virtual environments
 .venv/
 venv/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+.pytest_cache/
+*.whl
 
 # Logs
 *.log
@@ -30,5 +39,25 @@ node_modules/
 dist/
 build/
 
+# Data / outputs
+data/
+output/
+output_batch/
+
+# Frontend
+frontend/docs/
+
 # RAG downloaded documents (large files, not committed)
 rag/**/data/
+
+# RAG pipeline generated files
+rag/dataset/corpus_profile.csv
+rag/ingestion/output/
+rag/embeddings/
+
+# Pre-processing generated files
+pre_procesing_2/output_batch/
+pre_procesing_2/mismatch_check.csv
+
+# Downloaded / generated
+downolad_files/corpus_profile.csv
