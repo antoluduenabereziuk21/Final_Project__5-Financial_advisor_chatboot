@@ -25,12 +25,12 @@ rag/
 ├── vector_store/          Conexión a pgvector + CRUD
 │   ├── client.py          Connection pool asyncpg
 │   ├── repository.py      Insert, search_similar, init_schema
-│   ├── models.py          ChunkRecord, SearchResult, SearchParams
-│   └── init_db.sql        Schema SQL rag_documents + índices HNSW/GIN
+│   ├── models.py          ChunkRecord/SearchResult/SearchParams + User/Conversation/ChatMessageRecord
+│   └── init_db.sql        Schema: users, conversations, chat_messages, companies, documents, rag_chunks + HNSW
 ├── embeddings/            Generación de embeddings con all-MiniLM-L6-v2
 │   └── generate.py        embed_text(), embed_batch() — 384 dimensiones
 ├── retrieval/             Búsqueda semántica + filtros por metadata
-│   └── retriever.py       retrieve() con post-filter y formateo de sources[]
+│   └── retriever.py       retrieve() con pre-filtrado tipado (ticker/company/fiscal_year) y formateo de sources[]
 ├── llm/                   Generación con LLM + confidence_flag
 │   └── generator.py       Prompt, respuesta, flags: ok / low_confidence / entity_not_found / subjective_no_verdict
 ├── app.py                 FastAPI entrypoint para el servicio RAG
@@ -57,8 +57,20 @@ Levanta PostgreSQL 16 con pgvector + pgAdmin 4:
 ./rag/init_db.sh
 ```
 
-Esto inicia los contenedores, instala la extensión `vector` y deja la base
-lista para recibir chunks con embeddings.
+Esto inicia los contenedores, instala la extensión `vector` y crea el schema
+completo (6 tablas) automáticamente en el primer arranque — `init_db.sql` se
+monta en `/docker-entrypoint-initdb.d/`:
+
+- **Aplicación**: `users`, `conversations`, `chat_messages`
+- **RAG vectorial**: `companies`, `documents`, `rag_chunks` (embeddings 384-d)
+
+La estructura completa de cada tabla e índices está en `docs/database_schema.md`.
+
+En Windows sin bash, usar directamente:
+
+```bash
+docker compose -f docker/docker-compose.yml up -d postgres_vector pgadmin
+```
 
 Credenciales por defecto — ver `docker/docker-compose.yml` o el output del script.
 
