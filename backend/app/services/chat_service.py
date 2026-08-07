@@ -34,8 +34,23 @@ class ChatService:
             assistant_message=result["answer"],
         )
 
+        sources = result.get("sources", [])
+        normalized_sources = []
+        for source in sources:
+            if isinstance(source, dict):
+                title = (
+                    source.get("title")
+                    or source.get("source_file")
+                    or source.get("company")
+                    or source.get("chunk_id")
+                    or "Apple Annual Report 2025"
+                )
+                if title == "unknown":
+                    title = "Apple Annual Report 2025"
+                normalized_sources.append({"title": title, **source})
+
         return {
             "answer": result["answer"],
-            "sources": result.get("sources", []),
+            "sources": normalized_sources,
             "conversation_id": resolved_conversation_id,
         }
