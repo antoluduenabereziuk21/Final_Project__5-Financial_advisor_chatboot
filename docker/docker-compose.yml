@@ -13,6 +13,9 @@ services:
       - "${VECTOR_DB_PORT:-5432}:5432"
     volumes:
       - ml_vector_data:/var/lib/postgresql/data
+      # Crea las tablas automaticamente en el primer arranque del contenedor
+      # (se ejecuta solo cuando el volumen de datos esta vacio).
+      - ../rag/vector_store/init_db.sql:/docker-entrypoint-initdb.d/01-init_db.sql:ro
     networks:
       - rag_network
     healthcheck:

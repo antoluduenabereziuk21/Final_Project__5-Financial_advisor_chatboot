@@ -15,12 +15,37 @@ def _serialize_vector(embedding: list[float]) -> str:
     return "[" + ",".join(str(v) for v in embedding) + "]"
 
 
+def _parse_embedding(value) -> list[float]:
+    """asyncpg devuelve la columna vector como str (no hay codec registrado);
+    convierte de vuelta a list[float] de forma robusta."""
+    if isinstance(value, str):
+        cleaned = value.strip("[]").replace(" ", "")
+        return [float(v) for v in cleaned.split(",") if v != ""]
+    return list(value)
+
+
+def _validate_embedding(embedding: list[float]) -> None:
+    if len(embedding) != _EMBEDDING_DIMS:
+        raise ValueError(
+            f"Embedding dimension mismatch: expected {_EMBEDDING_DIMS}, "
+            f"got {len(embedding)}"
+        )
+
+
 def _row_to_search_result(row: asyncpg.Record) -> SearchResult:
     return SearchResult(
         id=row["id"],
         content=row["content"],
-        metadata=dict(row["metadata"]),
         similarity=float(row["similarity"]),
+        ticker=row["ticker"],
+        company=row["company"],
+        fiscal_year=row["fiscal_year"],
+        form_type=row["form_type"],
+        accounting_standard=row["accounting_standard"],
+        canonical_section=row["canonical_section"],
+        source_file=row["source_file"],
+        page_start=row["page_start"],
+        page_end=row["page_end"],
     )
 
 
@@ -28,10 +53,29 @@ def _row_to_chunk_record(row: asyncpg.Record) -> ChunkRecord:
     return ChunkRecord(
         id=row["id"],
         content=row["content"],
-        embedding=list(row["embedding"]),
-        metadata=dict(row["metadata"]),
+        embedding=_parse_embedding(row["embedding"]),
+        ticker=row["ticker"],
+        company=row["company"],
+        fiscal_year=row["fiscal_year"],
+        form_type=row["form_type"],
+        accounting_standard=row["accounting_standard"],
+        canonical_section=row["canonical_section"],
+        source_file=row["source_file"],
+        page_start=row["page_start"],
+        page_end=row["page_end"],
+        numeric_density=row["numeric_density"],
+        document_id=row["document_id"],
+        chunk_index=row["chunk_index"],
         created_at=row["created_at"],
     )
+
+
+_SEARCH_COLUMNS = """
+    id, content,
+    1 - (embedding <=> $1::vector) AS similarity,
+    ticker, company, fiscal_year, form_type, accounting_standard,
+    canonical_section, source_file, page_start, page_end
+"""
 
 
 class VectorRepository:
@@ -44,129 +88,144 @@ class VectorRepository:
         async with self._client.pool.acquire() as conn:
             await conn.execute(sql)
 
+    async def _ensure_document(self, conn: asyncpg.Connection, chunk: ChunkRecord) -> int:
+        row = await conn.fetchrow(
+            """
+            INSERT INTO documents (source_file, ticker, company, fiscal_year,
+                                   form_type, accounting_standard)
+            VALUES ($1, $2, $3, $4, $5, $6)
+            ON CONFLICT (source_file) DO UPDATE SET
+                ticker = EXCLUDED.ticker,
+                company = EXCLUDED.company,
+                fiscal_year = EXCLUDED.fiscal_year,
+                form_type = EXCLUDED.form_type,
+                accounting_standard = EXCLUDED.accounting_standard
+            RETURNING id
+            """,
+            chunk.source_file,
+            chunk.ticker,
+            chunk.company,
+            chunk.fiscal_year,
+            chunk.form_type,
+            chunk.accounting_standard,
+        )
+        return row["id"]
+
+    @staticmethod
+    def _chunk_insert_sql() -> str:
+        return """
+            INSERT INTO rag_chunks
+                (document_id, chunk_index, content, embedding, ticker, company,
+                 fiscal_year, form_type, accounting_standard, canonical_section,
+                 source_file, page_start, page_end, numeric_density)
+            VALUES ($1, $2, $3, $4::vector, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+            RETURNING id
+        """
+
     async def insert_chunk(self, chunk: ChunkRecord) -> int:
-        if len(chunk.embedding) != _EMBEDDING_DIMS:
-            raise ValueError(
-                f"Embedding dimension mismatch: expected {_EMBEDDING_DIMS}, got {len(chunk.embedding)}"
-            )
-        vec = _serialize_vector(chunk.embedding)
+        _validate_embedding(chunk.embedding)
         async with self._client.pool.acquire() as conn:
+            document_id = await self._ensure_document(conn, chunk)
             row = await conn.fetchrow(
-                """
-                INSERT INTO rag_documents (content, embedding, metadata)
-                VALUES ($1, $2::vector, $3::jsonb)
-                RETURNING id
-                """,
+                self._chunk_insert_sql(),
+                document_id,
+                chunk.chunk_index,
                 chunk.content,
-                vec,
-                chunk.metadata,
+                _serialize_vector(chunk.embedding),
+                chunk.ticker,
+                chunk.company,
+                chunk.fiscal_year,
+                chunk.form_type,
+                chunk.accounting_standard,
+                chunk.canonical_section,
+                chunk.source_file,
+                chunk.page_start,
+                chunk.page_end,
+                chunk.numeric_density,
             )
             return row["id"]
 
     async def insert_chunks_batch(self, chunks: list[ChunkRecord]) -> list[int]:
         if not chunks:
             return []
-        for c in chunks:
-            if len(c.embedding) != _EMBEDDING_DIMS:
-                raise ValueError(
-                    f"Embedding dimension mismatch: expected {_EMBEDDING_DIMS}, got {len(c.embedding)}"
-                )
+        ids: list[int] = []
         async with self._client.pool.acquire() as conn:
-            records = [
-                (c.content, _serialize_vector(c.embedding), c.metadata)
-                for c in chunks
-            ]
-            rows = await conn.fetch(
-                """
-                INSERT INTO rag_documents (content, embedding, metadata)
-                SELECT * FROM UNNEST($1::text[], $2::vector[], $3::jsonb[])
-                RETURNING id
-                """,
-                [r[0] for r in records],
-                [r[1] for r in records],
-                [r[2] for r in records],
-            )
-            return [r["id"] for r in rows]
-
-    async def insert_chunks_batch_raw(self, chunks: list[dict]) -> list[int]:
-        if not chunks:
-            return []
-        for c in chunks:
-            emb = c["embedding"]
-            if len(emb) != _EMBEDDING_DIMS:
-                raise ValueError(
-                    f"Embedding dimension mismatch: expected {_EMBEDDING_DIMS}, got {len(emb)}"
-                )
-        async with self._client.pool.acquire() as conn:
-            records = [
-                (c["content"], _serialize_vector(c["embedding"]), c.get("metadata", {}))
-                for c in chunks
-            ]
-            rows = await conn.fetch(
-                """
-                INSERT INTO rag_documents (content, embedding, metadata)
-                SELECT * FROM UNNEST($1::text[], $2::vector[], $3::jsonb[])
-                RETURNING id
-                """,
-                [r[0] for r in records],
-                [r[1] for r in records],
-                [r[2] for r in records],
-            )
-            return [r["id"] for r in rows]
+            async with conn.transaction():
+                for chunk in chunks:
+                    _validate_embedding(chunk.embedding)
+                    document_id = await self._ensure_document(conn, chunk)
+                    row = await conn.fetchrow(
+                        self._chunk_insert_sql(),
+                        document_id,
+                        chunk.chunk_index,
+                        chunk.content,
+                        _serialize_vector(chunk.embedding),
+                        chunk.ticker,
+                        chunk.company,
+                        chunk.fiscal_year,
+                        chunk.form_type,
+                        chunk.accounting_standard,
+                        chunk.canonical_section,
+                        chunk.source_file,
+                        chunk.page_start,
+                        chunk.page_end,
+                        chunk.numeric_density,
+                    )
+                    ids.append(row["id"])
+        return ids
 
     async def get_neighbors(
         self, chunk_id: int, window: int = 1
     ) -> list[SearchResult]:
+        """Vecinos contiguos por chunk_index dentro del mismo documento
+        (contrato 3.4: rearmar tablas partidas sumando header + datos)."""
         async with self._client.pool.acquire() as conn:
-            row = await conn.fetchrow(
-                "SELECT id, content, metadata, embedding FROM rag_documents WHERE id = $1",
+            anchor = await conn.fetchrow(
+                "SELECT document_id, chunk_index, embedding FROM rag_chunks WHERE id = $1",
                 chunk_id,
             )
-            if row is None:
+            if anchor is None:
                 return []
-            query_vec = _serialize_vector(list(row["embedding"]))
+            query_vec = _serialize_vector(_parse_embedding(anchor["embedding"]))
             rows = await conn.fetch(
-                """
-                (SELECT id, content, metadata,
-                        1 - (embedding <=> $1::vector) AS similarity
-                 FROM rag_documents
-                 WHERE id < $2 ORDER BY id DESC LIMIT $3)
-                UNION ALL
-                (SELECT id, content, metadata,
-                        1 - (embedding <=> $1::vector) AS similarity
-                 FROM rag_documents
-                 WHERE id > $2 ORDER BY id ASC LIMIT $3)
-                ORDER BY similarity DESC
+                f"""
+                SELECT {_SEARCH_COLUMNS}
+                FROM rag_chunks
+                WHERE document_id = $2
+                  AND chunk_index BETWEEN $3 AND $4
+                  AND id <> $5
+                ORDER BY chunk_index ASC
                 """,
                 query_vec,
+                anchor["document_id"],
+                anchor["chunk_index"] - window,
+                anchor["chunk_index"] + window,
                 chunk_id,
-                window,
             )
             return [_row_to_search_result(r) for r in rows]
 
     async def search_similar(self, params: SearchParams) -> list[SearchResult]:
-        if len(params.query_embedding) != _EMBEDDING_DIMS:
-            raise ValueError(
-                f"Query embedding dimension mismatch: expected {_EMBEDDING_DIMS}, "
-                f"got {len(params.query_embedding)}"
-            )
+        _validate_embedding(params.query_embedding)
         vec = _serialize_vector(params.query_embedding)
 
-        sql = """
-            SELECT id, content, metadata, 1 - (embedding <=> $1::vector) AS similarity
-            FROM rag_documents
-        """
+        sql = f"SELECT {_SEARCH_COLUMNS} FROM rag_chunks"
         conditions: list[str] = []
         values: list[Any] = [vec]
 
-        if params.metadata_filter:
-            conditions.append("metadata @> $" + str(len(values) + 1) + "::jsonb")
-            values.append(params.metadata_filter)
+        if params.ticker:
+            conditions.append(f"ticker = ANY(${len(values) + 1})")
+            values.append(params.ticker)
+        if params.company:
+            conditions.append(f"company = ANY(${len(values) + 1})")
+            values.append(params.company)
+        if params.fiscal_year is not None:
+            conditions.append(f"fiscal_year = ${len(values) + 1}")
+            values.append(params.fiscal_year)
 
         if conditions:
             sql += " WHERE " + " AND ".join(conditions)
 
-        sql += " ORDER BY embedding <=> $1::vector LIMIT $" + str(len(values) + 1)
+        sql += f" ORDER BY embedding <=> $1::vector LIMIT ${len(values) + 1}"
         values.append(params.top_k)
 
         async with self._client.pool.acquire() as conn:
@@ -175,13 +234,20 @@ class VectorRepository:
 
     async def count(self) -> int:
         async with self._client.pool.acquire() as conn:
-            row = await conn.fetchval("SELECT COUNT(*) FROM rag_documents")
+            row = await conn.fetchval("SELECT COUNT(*) FROM rag_chunks")
             return row or 0
 
     async def get_by_id(self, chunk_id: int) -> ChunkRecord | None:
         async with self._client.pool.acquire() as conn:
             row = await conn.fetchrow(
-                "SELECT id, content, embedding, metadata, created_at FROM rag_documents WHERE id = $1",
+                """
+                SELECT id, document_id, chunk_index, content, embedding, ticker,
+                       company, fiscal_year, form_type, accounting_standard,
+                       canonical_section, source_file, page_start, page_end,
+                       numeric_density, created_at
+                FROM rag_chunks
+                WHERE id = $1
+                """,
                 chunk_id,
             )
             if row is None:
@@ -189,7 +255,8 @@ class VectorRepository:
             return _row_to_chunk_record(row)
 
     async def delete_all(self) -> int:
+        """Limpia el corpus completo. DELETE sobre documents cascada a rag_chunks."""
         async with self._client.pool.acquire() as conn:
-            result = await conn.execute("DELETE FROM rag_documents")
+            result = await conn.execute("DELETE FROM documents")
             count = int(result.split()[-1])
             return count

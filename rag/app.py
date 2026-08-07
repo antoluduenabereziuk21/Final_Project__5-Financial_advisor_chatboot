@@ -10,6 +10,7 @@ from embeddings.generate import embed_text
 from llm.generator import configure as configure_llm, generate
 from retrieval.retriever import retrieve
 from vector_store.client import VectorDbClient
+from vector_store.models import ChunkRecord
 from vector_store.repository import VectorRepository
 
 # Ensure ingestion/ is on sys.path so orchestrate.py's local imports work
@@ -69,15 +70,27 @@ async def ingest(body: IngestRequest):
     result, _ = run_one(body.pdf_path)
     chunks = result["chunks_word_count"]
 
-    chunk_records = [
-        {
-            "content": c["text"],
-            "embedding": embed_text(c["text"]),
-            "metadata": c.get("metadata", {}),
-        }
-        for c in chunks
-    ]
-    ids = await app.state.repo.insert_chunks_batch_raw(chunk_records)
+    chunk_records = []
+    for idx, c in enumerate(chunks):
+        meta = c.get("metadata", {})
+        chunk_records.append(
+            ChunkRecord(
+                content=c["text"],
+                embedding=embed_text(c["text"]),
+                ticker=meta.get("ticker") or "",
+                company=meta.get("company") or "",
+                fiscal_year=meta.get("fiscal_year") or 0,
+                form_type=meta.get("form_type"),
+                accounting_standard=meta.get("accounting_standard"),
+                canonical_section=meta.get("canonical_section"),
+                source_file=body.pdf_path,
+                page_start=c.get("page_start"),
+                page_end=c.get("page_end"),
+                numeric_density=meta.get("numeric_density"),
+                chunk_index=idx,
+            )
+        )
+    ids = await app.state.repo.insert_chunks_batch(chunk_records)
     return {"message": "Ingestion complete", "chunks_indexed": len(ids)}
 
 
