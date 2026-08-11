@@ -11,6 +11,7 @@ const useChatCopies = {
 
 export function useChat() {
   const [messages, setMessages] = useState<IChatMessage[]>([])
+  const [searches, setSearches] = useState<string[]>([])
   const [isSending, setIsSending] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -29,6 +30,7 @@ export function useChat() {
         result.userMessage,
         result.assistantMessage,
       ])
+      setSearches((previous) => [content, ...previous])
     } catch {
       setError(useChatCopies.sendError)
     } finally {
@@ -36,10 +38,17 @@ export function useChat() {
     }
   }
 
+  function resetChat() {
+    setMessages([])
+    setError(null)
+  }
+
   return {
     messages,
+    searches,
     isSending,
     error,
     sendMessage,
+    resetChat,
   }
 }

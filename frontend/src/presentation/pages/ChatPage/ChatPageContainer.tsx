@@ -5,7 +5,7 @@ import { useChat } from "@/presentation/hooks/useChat"
 import { ChatPage } from "./ChatPage"
 
 function ChatPageContainer() {
-  const { messages, isSending, error, sendMessage } = useChat()
+  const { messages, searches, isSending, error, sendMessage, resetChat } = useChat()
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -21,10 +21,12 @@ function ChatPageContainer() {
   return (
     <ChatPage
       messages={messages}
+      searches={searches}
       isSending={isSending}
       error={error}
       messagesEndRef={messagesEndRef}
       onSend={sendMessage}
+      onNewChat={resetChat}
     />
   )
 }
