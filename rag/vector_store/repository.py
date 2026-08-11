@@ -46,6 +46,7 @@ def _row_to_search_result(row: asyncpg.Record) -> SearchResult:
         source_file=row["source_file"],
         page_start=row["page_start"],
         page_end=row["page_end"],
+        company_name_mismatch=row["company_name_mismatch"],
     )
 
 
@@ -66,6 +67,7 @@ def _row_to_chunk_record(row: asyncpg.Record) -> ChunkRecord:
         numeric_density=row["numeric_density"],
         document_id=row["document_id"],
         chunk_index=row["chunk_index"],
+        company_name_mismatch=row["company_name_mismatch"],
         created_at=row["created_at"],
     )
 
@@ -74,7 +76,7 @@ _SEARCH_COLUMNS = """
     id, content,
     1 - (embedding <=> $1::vector) AS similarity,
     ticker, company, fiscal_year, form_type, accounting_standard,
-    canonical_section, source_file, page_start, page_end
+    canonical_section, source_file, page_start, page_end, company_name_mismatch
 """
 
 
@@ -117,8 +119,9 @@ class VectorRepository:
             INSERT INTO rag_chunks
                 (document_id, chunk_index, content, embedding, ticker, company,
                  fiscal_year, form_type, accounting_standard, canonical_section,
-                 source_file, page_start, page_end, numeric_density)
-            VALUES ($1, $2, $3, $4::vector, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+                 source_file, page_start, page_end, numeric_density,
+                 company_name_mismatch)
+            VALUES ($1, $2, $3, $4::vector, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
             RETURNING id
         """
 
@@ -142,6 +145,7 @@ class VectorRepository:
                 chunk.page_start,
                 chunk.page_end,
                 chunk.numeric_density,
+                chunk.company_name_mismatch,
             )
             return row["id"]
 
@@ -170,9 +174,92 @@ class VectorRepository:
                         chunk.page_start,
                         chunk.page_end,
                         chunk.numeric_density,
+                        chunk.company_name_mismatch,
                     )
                     ids.append(row["id"])
         return ids
+
+    @staticmethod
+    def _chunk_insert_sql_no_returning() -> str:
+        # Same column list/order as _chunk_insert_sql(), without RETURNING --
+        # asyncpg's executemany() doesn't return per-row results, so RETURNING
+        # would just be dead weight on every one of tens of thousands of rows.
+        return """
+            INSERT INTO rag_chunks
+                (document_id, chunk_index, content, embedding, ticker, company,
+                 fiscal_year, form_type, accounting_standard, canonical_section,
+                 source_file, page_start, page_end, numeric_density,
+                 company_name_mismatch)
+            VALUES ($1, $2, $3, $4::vector, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+        """
+
+    async def insert_chunks_for_document(self, chunks: list[ChunkRecord]) -> int:
+        """Bulk-insert path for a loader that processes one source document
+        (one parquet/JSON file) at a time -- resolves the parent `documents`
+        row ONCE for the whole batch instead of once per chunk (unlike
+        insert_chunks_batch, which re-upserts `documents` on every single
+        chunk -- fine for /ingest's one-PDF-at-a-time case, wasteful at
+        hundreds of thousands of rows). Every ChunkRecord in `chunks` must
+        belong to the same document (same source_file/ticker/company/etc --
+        taken from chunks[0]); this is not checked per-row.
+
+        Uses conn.executemany() over the extended-query protocol rather than
+        asyncpg's binary COPY, because there is no pgvector codec registered
+        on this connection (see _parse_embedding's docstring) -- binary COPY
+        would need one to encode the `embedding` column and this hasn't been
+        set up. executemany() reuses the prepared statement across rows and
+        is a single round-trip per batch, which is the main cost COPY would
+        have saved; it's the safer choice given this can't be tested against
+        a live DB before a real bulk load depends on it.
+
+        Returns the number of chunks inserted (0 if `chunks` is empty).
+        """
+        if not chunks:
+            return 0
+        for chunk in chunks:
+            _validate_embedding(chunk.embedding)
+        async with self._client.pool.acquire() as conn:
+            async with conn.transaction():
+                document_id = await self._ensure_document(conn, chunks[0])
+                rows = [
+                    (
+                        document_id,
+                        c.chunk_index,
+                        c.content,
+                        _serialize_vector(c.embedding),
+                        c.ticker,
+                        c.company,
+                        c.fiscal_year,
+                        c.form_type,
+                        c.accounting_standard,
+                        c.canonical_section,
+                        c.source_file,
+                        c.page_start,
+                        c.page_end,
+                        c.numeric_density,
+                        c.company_name_mismatch,
+                    )
+                    for c in chunks
+                ]
+                await conn.executemany(self._chunk_insert_sql_no_returning(), rows)
+        return len(rows)
+
+    async def get_document_chunk_count(self, source_file: str) -> int | None:
+        """Returns how many rag_chunks rows already exist for the document
+        with this source_file, or None if no such document exists yet.
+        Used by bulk loaders to skip already-fully-loaded documents on a
+        re-run -- same resumability pattern as run_batch.py's "skip if
+        output JSON already exists" and colab_embed_chunks.py's
+        already_done()."""
+        async with self._client.pool.acquire() as conn:
+            document_id = await conn.fetchval(
+                "SELECT id FROM documents WHERE source_file = $1", source_file
+            )
+            if document_id is None:
+                return None
+            return await conn.fetchval(
+                "SELECT COUNT(*) FROM rag_chunks WHERE document_id = $1", document_id
+            )
 
     async def get_neighbors(
         self, chunk_id: int, window: int = 1
@@ -244,7 +331,7 @@ class VectorRepository:
                 SELECT id, document_id, chunk_index, content, embedding, ticker,
                        company, fiscal_year, form_type, accounting_standard,
                        canonical_section, source_file, page_start, page_end,
-                       numeric_density, created_at
+                       numeric_density, company_name_mismatch, created_at
                 FROM rag_chunks
                 WHERE id = $1
                 """,

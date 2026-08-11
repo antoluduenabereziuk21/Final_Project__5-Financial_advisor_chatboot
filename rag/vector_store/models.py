@@ -27,6 +27,7 @@ class ChunkRecord:
     numeric_density: float | None = None
     document_id: int | None = None
     chunk_index: int | None = None
+    company_name_mismatch: bool | None = None
     id: int | None = None
     created_at: datetime | None = None
 
@@ -45,6 +46,7 @@ class SearchResult:
     source_file: str = ""
     page_start: int | None = None
     page_end: int | None = None
+    company_name_mismatch: bool | None = None
 
 
 @dataclass

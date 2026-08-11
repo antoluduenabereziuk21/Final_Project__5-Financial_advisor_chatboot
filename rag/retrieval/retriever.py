@@ -42,6 +42,7 @@ async def retrieve(
                 "page_end": r.page_end,
                 "relevance_score": r.similarity,
                 "text_snippet": r.content[:300],
+                "company_name_mismatch": r.company_name_mismatch,
             }
         )
 

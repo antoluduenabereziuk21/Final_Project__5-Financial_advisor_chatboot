@@ -57,6 +57,16 @@ def _compute_confidence_flag(
     if any(m in q_lower for m in subjective_markers):
         return "subjective_no_verdict"
 
+    # company_name_mismatch is NULL for a source whose folder-derived company
+    # was never cross-checked against the cover-page registrant name (~19.5%
+    # of the corpus, per rag/ingestion/RESULTS.md) -- NULL is not "confirmed
+    # fine", it's "unchecked". If any source feeding this answer is unverified,
+    # don't report "ok" as if the company attribution were confirmed correct.
+    # (True/confirmed-mismatch sources are excluded upstream at embedding time
+    # and shouldn't reach here at all -- this only catches the unchecked case.)
+    if any(s.get("company_name_mismatch") is None for s in sources):
+        return "low_confidence"
+
     return "ok"
 
 

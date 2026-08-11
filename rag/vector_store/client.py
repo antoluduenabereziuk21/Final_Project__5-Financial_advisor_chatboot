@@ -1,9 +1,16 @@
 from __future__ import annotations
 
 import os
-from typing import Self
 
 import asyncpg
+
+# NOTE: no `from typing import Self` -- that's Python 3.11+ only. This file
+# uses `from __future__ import annotations` (line 1), which makes every
+# annotation below a lazy, unevaluated string at runtime (PEP 563) -- so
+# `-> Self` still works as a type hint for static checkers on any Python
+# version without importing the name. Confirmed real: this broke on Python
+# 3.9 (ImportError: cannot import name 'Self' from 'typing') the first time
+# anyone outside a 3.11+ env tried to run rag/bulk_load.py.
 
 
 class VectorDbClient:
