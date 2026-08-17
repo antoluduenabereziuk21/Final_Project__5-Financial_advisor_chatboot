@@ -5,3 +5,4 @@ __pycache__/
 .venv/
 venv/
 .DS_Store
+corpus_profile.csv

@@ -1,32 +1,61 @@
-from app.rag.chain import RAGChain
-from app.rag.embeddings import EmbeddingService, MockEmbeddingService
-from app.rag.llm import LLMService, MockLLMService
-from app.rag.prompt_builder import MockPromptBuilder, PromptBuilder
-from app.rag.retriever import MockRetriever, Retriever
+from __future__ import annotations
+
+from typing import Any, Protocol
+
+
+class RootRAGAdapter(Protocol):
+    async def generate_answer(
+        self,
+        *,
+        question: str,
+        conversation_history: list[dict[str, str]],
+        filters: dict[str, Any] | None = None,
+        top_k: int = 5,
+    ) -> dict[str, Any]:
+        ...
 
 
 class RAGService:
-    def __init__(
-        self,
-        retriever: Retriever | None = None,
-        embedding_service: EmbeddingService | None = None,
-        prompt_builder: PromptBuilder | None = None,
-        llm_service: LLMService | None = None,
-    ) -> None:
-        self._retriever = retriever or MockRetriever()
-        self._embedding_service = embedding_service or MockEmbeddingService()
-        self._prompt_builder = prompt_builder or MockPromptBuilder()
-        self._llm_service = llm_service or MockLLMService()
-        self._chain = RAGChain(
-            retriever=self._retriever,
-            embedding_service=self._embedding_service,
-            prompt_builder=self._prompt_builder,
-            llm_service=self._llm_service,
-        )
+    def __init__(self, adapter: RootRAGAdapter | None = None) -> None:
+        self._adapter = adapter
 
     async def generate_answer(
         self,
         question: str,
-        conversation_history: list,
-    ) -> dict:
-        return await self._chain.run(question=question, conversation_history=conversation_history)
+        conversation_history: list[dict[str, str]],
+        filters: dict[str, Any] | None = None,
+        top_k: int = 5,
+    ) -> dict[str, Any]:
+        if self._adapter is None:
+            return {
+                "answer": "RAG root adapter is not configured yet.",
+                "confidence_flag": "low_confidence",
+                "sources": [
+                    {
+                        "chunk_id": "fallback-chunk",
+                        "company": "unknown",
+                        "ticker": "UNKNOWN",
+                        "fiscal_year": None,
+                        "form_type": None,
+                        "accounting_standard": None,
+                        "canonical_section": None,
+                        "source_file": None,
+                        "page_start": None,
+                        "page_end": None,
+                        "relevance_score": 0.0,
+                        "text_snippet": "Fallback source while the root RAG adapter is not wired.",
+                    }
+                ],
+                "retrieval_meta": {
+                    "filters_applied": filters or {},
+                    "chunks_considered": 1,
+                    "model": "all-MiniLM-L6-v2",
+                },
+            }
+
+        return await self._adapter.generate_answer(
+            question=question,
+            conversation_history=conversation_history,
+            filters=filters,
+            top_k=top_k,
+        )
