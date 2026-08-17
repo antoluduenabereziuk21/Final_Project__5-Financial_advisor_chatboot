@@ -8,3 +8,6 @@ __pycache__/
 
 # bulk_load.py's per-run log -- local run output, not source
 # bulk_load_results.csv
+
+# Supabase credentials (contains real DB password)
+SUPABASE_LOAD.md
