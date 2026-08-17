@@ -5,8 +5,8 @@ from typing import Any
 
 import asyncpg
 
-from vector_store.client import VectorDbClient
-from vector_store.models import ChunkRecord, SearchParams, SearchResult
+from rag.vector_store.client import VectorDbClient
+from rag.vector_store.models import ChunkRecord, SearchParams, SearchResult
 
 _EMBEDDING_DIMS = 384
 

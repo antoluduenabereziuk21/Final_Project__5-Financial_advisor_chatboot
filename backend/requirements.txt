@@ -1,3 +1,7 @@
 fastapi==0.116.1
 uvicorn[standard]==0.35.0
 pydantic==2.11.7
+python-dotenv>=1.0
+asyncpg>=0.30
+groq>=0.15
+sentence-transformers>=3.0

@@ -5,7 +5,7 @@ import os
 _LLM_PROVIDER: str | None = None  # set by configure()
 
 
-def configure(provider: str = "openai") -> None:
+def configure(provider: str | None = "groq") -> None:
     global _LLM_PROVIDER
     _LLM_PROVIDER = provider
 
@@ -109,22 +109,22 @@ def _fallback_generate(
 async def _llm_generate(
     question: str, sources: list[dict], flag: str
 ) -> tuple[str, str]:
-    if _LLM_PROVIDER == "openai":
-        return await _openai_generate(question, sources, flag)
+    if _LLM_PROVIDER == "groq":
+        return await _groq_generate(question, sources, flag)
 
     prompt = _build_prompt(question, sources)
     return _fallback_generate(prompt, sources, flag)
 
 
-async def _openai_generate(
+async def _groq_generate(
     question: str, sources: list[dict], flag: str
 ) -> tuple[str, str]:
-    import openai
+    import groq
 
     prompt = _build_prompt(question, sources)
-    client = openai.AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+    client = groq.AsyncGroq(api_key=os.getenv("GROQ_API_KEY"))
     response = await client.chat.completions.create(
-        model=os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
+        model=os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile"),
         messages=[{"role": "user", "content": prompt}],
         temperature=0.3,
     )
