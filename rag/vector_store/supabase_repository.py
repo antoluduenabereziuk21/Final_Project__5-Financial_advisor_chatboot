@@ -34,6 +34,12 @@ class SupabaseVectorRepository:
         if not self._key:
             raise ValueError("SUPABASE_KEY is not configured")
 
+    def _headers(self) -> dict[str, str]:
+        return {
+            "apikey": self._key,
+            "Content-Type": "application/json",
+        }
+
     async def search_similar(
         self,
         params: SearchParams,
@@ -46,17 +52,10 @@ class SupabaseVectorRepository:
             "filter_fiscal_year": params.fiscal_year,
         }
 
-        headers = {
-            "apikey": self._key,
-            "Content-Type": "application/json",
-        }
-
-        async with httpx.AsyncClient(
-            timeout=self._timeout
-        ) as client:
+        async with httpx.AsyncClient(timeout=self._timeout) as client:
             response = await client.post(
                 f"{self._url}/rest/v1/rpc/match_rag_chunks",
-                headers=headers,
+                headers=self._headers(),
                 json=payload,
             )
 
@@ -72,12 +71,8 @@ class SupabaseVectorRepository:
                 company=row["company"],
                 fiscal_year=row["fiscal_year"],
                 form_type=row.get("form_type"),
-                accounting_standard=row.get(
-                    "accounting_standard"
-                ),
-                canonical_section=row.get(
-                    "canonical_section"
-                ),
+                accounting_standard=row.get("accounting_standard"),
+                canonical_section=row.get("canonical_section"),
                 source_file=row.get("source_file", ""),
                 page_start=row.get("page_start"),
                 page_end=row.get("page_end"),
@@ -87,3 +82,40 @@ class SupabaseVectorRepository:
             )
             for row in rows
         ]
+
+    async def count(self) -> int:
+        """Return the number of indexed chunks visible through Supabase REST."""
+
+        headers = {
+            **self._headers(),
+            "Prefer": "count=planned",
+            "Range": "0-0",
+        }
+
+        async with httpx.AsyncClient(timeout=self._timeout) as client:
+            response = await client.get(
+                f"{self._url}/rest/v1/rag_chunks",
+                headers=headers,
+                params={
+                    "select": "id",
+                    "limit": "1",
+                },
+            )
+
+            response.raise_for_status()
+
+        content_range = response.headers.get("content-range", "")
+
+        if "/" not in content_range:
+            raise RuntimeError(
+                "Supabase did not return an exact row count."
+            )
+
+        total = content_range.rsplit("/", 1)[1]
+
+        if total == "*":
+            raise RuntimeError(
+                "Supabase returned an unknown row count."
+            )
+
+        return int(total)

@@ -24,8 +24,14 @@ class Settings:
         self.vector_db_password = os.getenv("VECTOR_DB_PASSWORD", "ml_password_2026")
         self.vector_db_name = os.getenv("VECTOR_DB_NAME", "financial_rag_vectors")
 
+        # Optional Supabase REST/RPC configuration.
+        # Used for vector retrieval over HTTPS instead of requiring a direct
+        # PostgreSQL connection.
+        self.supabase_url: str | None = os.getenv("SUPABASE_URL")
+        self.supabase_key: str | None = os.getenv("SUPABASE_KEY")
+
         self.groq_api_key: str | None = os.getenv("GROQ_API_KEY")
-        self.groq_model: str = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
+        self.groq_model: str = os.getenv("GROQ_MODEL", "openai/gpt-oss-120b")
 
 
 settings = Settings()

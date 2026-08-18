@@ -15,6 +15,8 @@ def _build_prompt(question: str, sources: list[dict]) -> str:
     for i, s in enumerate(sources, 1):
         header = f"[{i}] {s.get('company', '?')} ({s.get('ticker', '?')}) "
         header += f"FY{s.get('fiscal_year', '?')} — {s.get('canonical_section', '?')}"
+        # Use the full retrieved chunk as grounding context for the LLM.
+        # text_snippet remains as a compatibility fallback for older callers.
         chunk_content = s.get("content") or s.get("text_snippet", "")
         context_parts.append(f"{header}\n{chunk_content}")
 
@@ -93,7 +95,8 @@ async def generate(
         prompt = _build_prompt(question, sources)
         return _fallback_generate(prompt, sources, confidence_flag)
 
-    return _llm_generate(question, sources, confidence_flag)
+    # Await the asynchronous LLM provider before returning its result.
+    return await _llm_generate(question, sources, confidence_flag)
 
 
 def _fallback_generate(
