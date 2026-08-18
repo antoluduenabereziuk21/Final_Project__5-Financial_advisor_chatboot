@@ -86,7 +86,7 @@ PGADMIN_EMAIL=ai_team@empresa.com
 PGADMIN_PASSWORD=admin_password_2026
 PGADMIN_PORT=8080
 
-# Groq (LLM)
+# Groq (LLM) - https://console.groq.com create an account and get your API key
 GROQ_API_KEY=tu_groq_api_key_aqui
 GROQ_MODEL=openai/gpt-oss-120b
 
