@@ -104,8 +104,26 @@ CREATE TABLE IF NOT EXISTS rag_chunks (
     page_start          INT,
     page_end            INT,
     numeric_density     REAL,
+    -- True = confirmed folder company != cover-page registrant (excluded upstream
+    -- at embedding time, should not normally appear here); False = confirmed
+    -- match; NULL = unchecked, not "checked and fine" -- see rag/ingestion/RESULTS.md.
+    -- Surfaced back out through search_similar()/retriever.py so an unverified
+    -- (NULL) source can downgrade the response's confidence_flag instead of
+    -- being silently trusted.
+    company_name_mismatch BOOLEAN,
     created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+-- ----------------------------------------------------------------------------
+-- Migrations for columns added after a database may already exist.
+-- CREATE TABLE IF NOT EXISTS above only helps on a genuinely fresh database --
+-- against an already-existing rag_chunks table (e.g. anyone who ran init_db.sh
+-- before 2026-08-11) it silently no-ops and the new column never gets added.
+-- Confirmed real: this happened on the first run after company_name_mismatch
+-- was added here. Every future column addition needs its own line below, not
+-- just an edit to the CREATE TABLE block above.
+-- ----------------------------------------------------------------------------
+ALTER TABLE rag_chunks ADD COLUMN IF NOT EXISTS company_name_mismatch BOOLEAN;
 
 -- Busqueda por similitud de coseno (HNSW, aproximado)
 CREATE INDEX IF NOT EXISTS idx_rag_chunks_hnsw

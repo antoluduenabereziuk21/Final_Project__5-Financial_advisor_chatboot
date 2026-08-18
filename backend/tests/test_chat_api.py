@@ -1,7 +1,17 @@
 from fastapi.testclient import TestClient
 
 from app.main import app
+from app.services.chat_service import ChatService
+from app.services.conversation_service import ConversationService
+from app.services.rag_service import RAGService
 
+
+# Unit tests intentionally use the deterministic fallback RAG service.
+# External Supabase/Groq integrations are validated separately end-to-end.
+app.state.chat_service = ChatService(
+    rag_service=RAGService(),
+    conversation_service=ConversationService(),
+)
 
 client = TestClient(app)
 

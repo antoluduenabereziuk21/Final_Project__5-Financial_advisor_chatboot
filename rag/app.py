@@ -88,6 +88,7 @@ async def ingest(body: IngestRequest):
                 page_end=c.get("page_end"),
                 numeric_density=meta.get("numeric_density"),
                 chunk_index=idx,
+                company_name_mismatch=meta.get("company_name_mismatch"),
             )
         )
     ids = await app.state.repo.insert_chunks_batch(chunk_records)

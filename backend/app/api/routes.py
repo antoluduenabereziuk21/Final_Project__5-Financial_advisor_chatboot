@@ -2,7 +2,7 @@ from fastapi import APIRouter
 
 from app.models.welcome import WelcomeContent
 
-api_router = APIRouter(tags=["api"])
+api_router = APIRouter(prefix="/api", tags=["api"])
 
 
 @api_router.get("/welcome", response_model=WelcomeContent)

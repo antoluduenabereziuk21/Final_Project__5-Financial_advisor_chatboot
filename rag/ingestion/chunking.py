@@ -63,29 +63,59 @@ def detect_structure_boundaries(text: str):
 MIN_SECTION_WORDS = 30  # below this, treat as a table-of-contents line, not a real section
 
 
-def chunk_structure_then_word_count(text: str, source_file: str):
+def filtered_structure_boundaries(text: str):
     """
+    detect_structure_boundaries() plus the TOC-rejection filter, exposed on
+    its own (not just buried inside chunk_structure_then_word_count) so
+    ANY chunk -- including plain word_count chunks, which don't otherwise
+    run structure detection at all -- can be labeled with which Item/Part
+    section its text falls in. See label_chunks_with_section below, which
+    is what actually uses this for word_count chunks.
+
     Confirmed on real data (ACADIA 2018 10-K): a plain Item/Part regex also
     matches every line of the filing's own table of contents ("Item1.
     Business.......1"), inflating boundary count ~3x over the real ~15-20
     items a 10-K has and producing spurious few-word "sections". Filtering
     by minimum section length is a heuristic, not a proper TOC detector --
-    flagged as worth revisiting (e.g. detecting dot-leader lines directly)
-    rather than treated as fully solved.
+    (cleaning.py's is_toc_page now also excludes whole TOC pages from
+    chunking entirely, which should catch most of this upstream, but this
+    filter stays as a second layer for any TOC-style matches on pages that
+    weren't excluded).
+
+    Returns (boundaries, report).
     """
     raw_boundaries = detect_structure_boundaries(text)
     if not raw_boundaries:
         return [], {"boundaries_detected": 0, "boundaries_after_toc_filter": 0}
 
-    # first pass: compute each boundary's section length to decide what to keep
     boundaries = []
     for i, (start, label) in enumerate(raw_boundaries):
         end = raw_boundaries[i + 1][0] if i + 1 < len(raw_boundaries) else len(text)
         if len(text[start:end].split()) >= MIN_SECTION_WORDS:
             boundaries.append((start, label))
 
+    return boundaries, {"boundaries_detected": len(raw_boundaries), "boundaries_after_toc_filter": len(boundaries)}
+
+
+def label_for_offset(boundaries: list, char_offset: int):
+    """Given filtered_structure_boundaries() output, returns the label
+    (e.g. "Item 1A") whose section contains char_offset, or None if the
+    offset is before the first detected boundary. Boundaries must be
+    sorted by start offset (filtered_structure_boundaries already returns
+    them that way)."""
+    label = None
+    for start, boundary_label in boundaries:
+        if start <= char_offset:
+            label = boundary_label
+        else:
+            break
+    return label
+
+
+def chunk_structure_then_word_count(text: str, source_file: str):
+    boundaries, report = filtered_structure_boundaries(text)
     if not boundaries:
-        return [], {"boundaries_detected": len(raw_boundaries), "boundaries_after_toc_filter": 0}
+        return [], report
 
     sections = []
     for i, (start, label) in enumerate(boundaries):
@@ -107,7 +137,8 @@ def chunk_structure_then_word_count(text: str, source_file: str):
                 "split_method": "structure_then_word_count",
                 "detected_label": label,
             })
-    return chunks, {"boundaries_detected": len(raw_boundaries), "boundaries_after_toc_filter": len(boundaries), "sections": len(sections)}
+    report["sections"] = len(sections)
+    return chunks, report
 
 
 if __name__ == "__main__":

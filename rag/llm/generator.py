@@ -5,7 +5,7 @@ import os
 _LLM_PROVIDER: str | None = None  # set by configure()
 
 
-def configure(provider: str = "openai") -> None:
+def configure(provider: str | None = "groq") -> None:
     global _LLM_PROVIDER
     _LLM_PROVIDER = provider
 
@@ -15,7 +15,10 @@ def _build_prompt(question: str, sources: list[dict]) -> str:
     for i, s in enumerate(sources, 1):
         header = f"[{i}] {s.get('company', '?')} ({s.get('ticker', '?')}) "
         header += f"FY{s.get('fiscal_year', '?')} — {s.get('canonical_section', '?')}"
-        context_parts.append(f"{header}\n{s['text_snippet']}")
+        # Use the full retrieved chunk as grounding context for the LLM.
+        # text_snippet remains as a compatibility fallback for older callers.
+        chunk_content = s.get("content") or s.get("text_snippet", "")
+        context_parts.append(f"{header}\n{chunk_content}")
 
     context = "\n\n".join(context_parts)
     return (
@@ -57,6 +60,16 @@ def _compute_confidence_flag(
     if any(m in q_lower for m in subjective_markers):
         return "subjective_no_verdict"
 
+    # company_name_mismatch is NULL for a source whose folder-derived company
+    # was never cross-checked against the cover-page registrant name (~19.5%
+    # of the corpus, per rag/ingestion/RESULTS.md) -- NULL is not "confirmed
+    # fine", it's "unchecked". If any source feeding this answer is unverified,
+    # don't report "ok" as if the company attribution were confirmed correct.
+    # (True/confirmed-mismatch sources are excluded upstream at embedding time
+    # and shouldn't reach here at all -- this only catches the unchecked case.)
+    if any(s.get("company_name_mismatch") is None for s in sources):
+        return "low_confidence"
+
     return "ok"
 
 
@@ -82,7 +95,8 @@ async def generate(
         prompt = _build_prompt(question, sources)
         return _fallback_generate(prompt, sources, confidence_flag)
 
-    return _llm_generate(question, sources, confidence_flag)
+    # Await the asynchronous LLM provider before returning its result.
+    return await _llm_generate(question, sources, confidence_flag)
 
 
 def _fallback_generate(
@@ -99,22 +113,22 @@ def _fallback_generate(
 async def _llm_generate(
     question: str, sources: list[dict], flag: str
 ) -> tuple[str, str]:
-    if _LLM_PROVIDER == "openai":
-        return await _openai_generate(question, sources, flag)
+    if _LLM_PROVIDER == "groq":
+        return await _groq_generate(question, sources, flag)
 
     prompt = _build_prompt(question, sources)
     return _fallback_generate(prompt, sources, flag)
 
 
-async def _openai_generate(
+async def _groq_generate(
     question: str, sources: list[dict], flag: str
 ) -> tuple[str, str]:
-    import openai
+    import groq
 
     prompt = _build_prompt(question, sources)
-    client = openai.AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+    client = groq.AsyncGroq(api_key=os.getenv("GROQ_API_KEY"))
     response = await client.chat.completions.create(
-        model=os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
+        model=os.getenv("GROQ_MODEL", "openai/gpt-oss-120b"),
         messages=[{"role": "user", "content": prompt}],
         temperature=0.3,
     )

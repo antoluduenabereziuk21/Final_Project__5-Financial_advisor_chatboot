@@ -1,0 +1,79 @@
+# 📋 Prototype Presentation: Financial Advisor Chatbot
+
+**Total Time:** 10 Minutes (~1:15 mins max per person)  
+**Language:** English  
+
+---
+
+## 🚨 SECTION 1: PROBLEM STATEMENT
+
+### 👤 Presenter 1: The Problem
+*   **Slide Title:** The Challenge in Financial Advisory
+*   **Bullet Points:**
+    *   Critical need for accurate financial data
+    *   Widespread market misinformation
+    *   Traditional financial advisory is costly and slow
+*   **Speech Script:**
+    > "Good morning, everyone. In the financial world, having access to accurate, reliable, and up-to-date information is absolutely critical for making sound decisions. However, today's investors and traders face a major challenge: financial misinformation is everywhere, and traditional financial advisory is often too expensive or too slow. This creates a significant gap for people who need quick, trustworthy answers to guide their investments. Our project addresses this exact barrier by leveraging artificial intelligence to make reliable financial guidance accessible to everyone. Now, I will pass it over to **[Presenter 2 Name]** to discuss our objective."
+
+### 👤 Presenter 2: Motivation & Goal
+*   **Slide Title:** Our Motivation: Democratizing Finance
+*   **Bullet Points:**
+    *   AI-powered financial assistant
+    *   Real-time insights on NASDAQ public companies
+    *   High-demand cutting-edge tech stack
+*   **Speech Script:**
+    > "Thank you, **[Presenter 1 Name]**. Driven by this challenge, our motivation is to build an intelligent Financial Advisor Chatbot. Our goal is to create an MVP capable of answering complex questions about public companies listed in NASDAQ. By combining finance, advanced NLP, and Large Language Models, we are developing a tool that acts as a 24/7 personal advisor. This project not only solves a real-world market need but also allows us to work with a high-demand tech stack that bridges cutting-edge AI with modern financial services. Next, **[Presenter 3 Name]** will explain the knowledge base behind our system."
+
+---
+
+## 📊 SECTION 2: DATASET DESCRIPTION
+
+### 👤 Presenter 3: Data Sources
+*   **Slide Title:** The Knowledge Base
+*   **Bullet Points:**
+    *   ~10,000 public financial documents
+    *   Official NASDAQ company profiles
+    *   Trusted internet news sources
+*   **Speech Script:**
+    > "Thank you, **[Presenter 2 Name]**. To ensure our chatbot provides accurate answers instead of generic guesses, we need a solid and trusted knowledge base. Our dataset consists of around ten thousand public financial documents and reliable news sources from the internet. This includes official financial statements, market reports, and historical data specifically focused on companies listed on the NASDAQ exchange. This extensive collection serves as the ground-truth foundation that our system will use to retrieve facts. Now, **[Presenter 4 Name]** will talk about how we leverage this data."
+
+### 👤 Presenter 4: Data Leveraging & Quality
+*   **Slide Title:** Data Leveraging & Quality
+*   **Bullet Points:**
+    *   Structuring and vectorizing financial data
+    *   Minimizing AI hallucinations
+    *   Grounded, reliable answers
+*   **Speech Script:**
+    > "Thank you, **[Presenter 3 Name]**. Having ten thousand documents is only useful if the chatbot can search through them efficiently. We are processing and structuring this dataset to leverage it within our RAG system. By converting this financial text into dense vector embeddings, we ensure that when a user asks a specific question, our chatbot retrieves only the most relevant, high-quality fragments. This strict data filtering process is essential to minimize AI hallucinations and deliver reliable, legally sound answers to the end user. Next, **[Presenter 5 Name]** will guide us through the architecture."
+
+---
+
+## 🛠️ SECTION 3: PROPOSED SOLUTION
+
+### 👤 Presenter 5: Frontend & API Orchestration
+*   **Slide Title:** User Interface & Orchestration Backend
+*   **Bullet Points:**
+    *   React + Vite + Tailwind interface
+    *   Secure FastAPI backend
+    *   Request lifecycle management
+*   **Speech Script:**
+    > "Thank you, **[Presenter 4 Name]**. Now, let’s dive into our proposed solution architecture. The workflow begins at the client side. We developed a modern, intuitive chat interface using React, Vite, and Tailwind CSS, where users can seamlessly type their financial questions. Once a user submits a query, it is securely sent to our backend powered by FastAPI. This backend layer acts as the orchestrator: it handles user authentication, session validation, and manages the lifecycle of each incoming request before routing it to our intelligence core. I’ll leave you with **[Presenter 6 Name]** for the RAG details."
+
+### 👤 Presenter 6: The RAG Pipeline
+*   **Slide Title:** The RAG Pipeline & Intelligence
+*   **Bullet Points:**
+    *   Deepset Haystack framework
+    *   Contextual prompt engineering
+    *   OpenAI GPT model integration
+*   **Speech Script:**
+    > "Thank you, **[Presenter 5 Name]**. Once the backend receives the query, it triggers our RAG pipeline, which is built using Deepset Haystack. Instead of passing the raw question directly to the AI, Haystack automatically processes text embeddings, fetches relevant data fragments, and builds a comprehensive context-aware prompt. This enriched prompt is then sent via HTTP API to the OpenAI GPT models. By supplying specific context alongside the user's question, the LLM can generate highly accurate and reliable financial insights tailored exactly to the request. Now, **[Presenter 7 Name]** will conclude with our data layer."
+
+### 👤 Presenter 7: Data Layer & MVP Scope
+*   **Slide Title:** Unified Storage & MVP Scope
+*   **Bullet Points:**
+    *   PostgreSQL with pgvector extension
+    *   Single-database architecture
+    *   Project constraints & future work
+*   **Speech Script:**
+    > "Thank you, **[Presenter 6 Name]**. For our data layer, we made a highly efficient architectural choice. Instead of running separate transactional and vector databases, we consolidated everything into PostgreSQL using the pgvector extension. This allows us to handle user sessions, logs, and high-dimensional vector embeddings within a single, unified database system, simplifying our infrastructure. To conclude, keeping project complexity and time constraints in mind, our current MVP delivers a streamlined, robust pipeline inspired by advanced platforms like FinChat, setting a strong foundation for future scaling. Thank you very much for your attention."

@@ -1,12 +1,23 @@
 from __future__ import annotations
 
+from typing import Protocol
+
 from rag.embeddings.generate import embed_text
-from rag.vector_store.models import SearchParams
-from rag.vector_store.repository import VectorRepository
+from rag.vector_store.models import SearchParams, SearchResult
+
+
+class VectorSearchRepository(Protocol):
+    """Common vector-search contract for PostgreSQL and Supabase repositories."""
+
+    async def search_similar(
+        self,
+        params: SearchParams,
+    ) -> list[SearchResult]:
+        ...
 
 
 async def retrieve(
-    repo: VectorRepository,
+    repo: VectorSearchRepository,
     question: str,
     ticker: list[str] | None = None,
     company: list[str] | None = None,
@@ -41,7 +52,11 @@ async def retrieve(
                 "page_start": r.page_start,
                 "page_end": r.page_end,
                 "relevance_score": r.similarity,
+                # Full chunk used as grounding context by the LLM.
+                "content": r.content,
+                # Short preview retained for API/UI compatibility.
                 "text_snippet": r.content[:300],
+                "company_name_mismatch": r.company_name_mismatch,
             }
         )
 

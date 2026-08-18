@@ -1,13 +1,13 @@
+.cursor/
+frontend/docs/
+
 # OS
 .DS_Store
 Thumbs.db
-desktop.ini
-$RECYCLE.BIN/
 
-# IDE / Editor
+# IDE
 .vscode/
 .idea/
-.cursor/
 *.swp
 *.swo
 *~
@@ -29,13 +29,13 @@ __pycache__/
 .pytest_cache/
 *.whl
 
-# Logs
-*.log
-
-# Dependencies
-node_modules/
-
-# Build output
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+.pytest_cache/
+*.whl
 dist/
 build/
 
@@ -47,8 +47,38 @@ output_batch/
 # Frontend
 frontend/docs/
 
-# RAG downloaded documents (large files, not committed)
+# Data / outputs
+data/
+output/
+output_batch/
+rag/dataset/data/
+rag/ingestion/output/
+rag/embeddings/
 rag/**/data/
+
+# Pre-processing generated files
+pre_procesing_2/output_batch/
+pre_procesing_2/mismatch_check.csv
+
+# Downloaded / generated
+downolad_files/corpus_profile.csv
+
+# Logs
+*.log
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+$RECYCLE.BIN/
+
+# IDE / Editor
+.vscode/
+.idea/
+.cursor/
+*.swp
+*.swo
+*~
 
 # RAG pipeline generated files
 rag/dataset/corpus_profile.csv
