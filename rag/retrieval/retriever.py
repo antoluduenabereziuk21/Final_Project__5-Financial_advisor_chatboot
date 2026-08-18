@@ -1,20 +1,29 @@
 from __future__ import annotations
 
+from typing import Protocol
+
 from rag.embeddings.generate import embed_text
-from rag.vector_store.models import SearchParams
-from rag.vector_store.repository import VectorRepository
+from rag.vector_store.models import SearchParams, SearchResult
+
+
+class VectorSearchRepository(Protocol):
+    async def search_similar(
+        self,
+        params: SearchParams,
+    ) -> list[SearchResult]:
+        ...
 
 
 async def retrieve(
-    repo: VectorRepository,
+    repo: VectorSearchRepository,
     question: str,
     ticker: list[str] | None = None,
     company: list[str] | None = None,
     fiscal_year: int | None = None,
     top_k: int = 5,
 ) -> tuple[list[dict], dict]:
-    """Embed la pregunta, aplica filtros tipados (ticker / company /
-    fiscal_year) y devuelve sources[] con la estructura del contrato."""
+    """Generate the question embedding and return the most relevant chunks."""
+
     query_embedding = embed_text(question)
 
     params = SearchParams(
@@ -24,33 +33,44 @@ async def retrieve(
         company=company,
         fiscal_year=fiscal_year,
     )
+
     results = await repo.search_similar(params)
 
     sources = []
-    for r in results:
+
+    for result in results:
         sources.append(
             {
-                "chunk_id": r.id,
-                "company": r.company,
-                "ticker": r.ticker,
-                "fiscal_year": r.fiscal_year,
-                "form_type": r.form_type,
-                "accounting_standard": r.accounting_standard,
-                "canonical_section": r.canonical_section,
-                "source_file": r.source_file,
-                "page_start": r.page_start,
-                "page_end": r.page_end,
-                "relevance_score": r.similarity,
-                "text_snippet": r.content[:300],
-                "company_name_mismatch": r.company_name_mismatch,
+                "chunk_id": result.id,
+                "company": result.company,
+                "ticker": result.ticker,
+                "fiscal_year": result.fiscal_year,
+                "form_type": result.form_type,
+                "accounting_standard": result.accounting_standard,
+                "canonical_section": result.canonical_section,
+                "source_file": result.source_file,
+                "page_start": result.page_start,
+                "page_end": result.page_end,
+                "relevance_score": result.similarity,
+
+                # Full chunk for the LLM context.
+                "content": result.content,
+
+                # Short preview for API/UI source display.
+                "text_snippet": result.content[:300],
+
+                "company_name_mismatch": result.company_name_mismatch,
             }
         )
 
     filters_applied = {}
+
     if ticker:
         filters_applied["ticker"] = ticker
+
     if company:
         filters_applied["company"] = company
+
     if fiscal_year is not None:
         filters_applied["fiscal_year"] = fiscal_year
 
