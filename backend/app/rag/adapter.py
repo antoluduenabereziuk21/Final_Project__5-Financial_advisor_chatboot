@@ -6,17 +6,18 @@ from app.services.rag_service import RootRAGAdapter
 
 from rag.embeddings.generate import embed_text
 from rag.llm.generator import generate
-from rag.retrieval.retriever import retrieve
-from rag.vector_store.repository import VectorRepository
+from rag.retrieval.retriever import VectorSearchRepository, retrieve
 
 
 class RootRAGAdapterImpl:
-    """Bridges the backend ChatService with the real rag/ modules.
+    """Bridge the backend ChatService with the shared RAG pipeline.
 
-    Conforms to the RootRAGAdapter protocol expected by RAGService.
+    The adapter depends on the VectorSearchRepository protocol instead of a
+    concrete database implementation. This allows the existing /api/chat flow
+    to work with either PostgreSQL/pgvector or Supabase HTTPS/RPC.
     """
 
-    def __init__(self, repo: VectorRepository) -> None:
+    def __init__(self, repo: VectorSearchRepository) -> None:
         self._repo = repo
 
     async def generate_answer(

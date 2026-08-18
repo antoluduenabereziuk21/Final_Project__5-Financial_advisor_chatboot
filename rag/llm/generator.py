@@ -15,7 +15,10 @@ def _build_prompt(question: str, sources: list[dict]) -> str:
     for i, s in enumerate(sources, 1):
         header = f"[{i}] {s.get('company', '?')} ({s.get('ticker', '?')}) "
         header += f"FY{s.get('fiscal_year', '?')} — {s.get('canonical_section', '?')}"
-        context_parts.append(f"{header}\n{s['text_snippet']}")
+        # Use the full retrieved chunk as grounding context for the LLM.
+        # text_snippet remains as a compatibility fallback for older callers.
+        chunk_content = s.get("content") or s.get("text_snippet", "")
+        context_parts.append(f"{header}\n{chunk_content}")
 
     context = "\n\n".join(context_parts)
     return (
@@ -92,7 +95,8 @@ async def generate(
         prompt = _build_prompt(question, sources)
         return _fallback_generate(prompt, sources, confidence_flag)
 
-    return _llm_generate(question, sources, confidence_flag)
+    # Await the asynchronous LLM provider before returning its result.
+    return await _llm_generate(question, sources, confidence_flag)
 
 
 def _fallback_generate(
@@ -124,7 +128,7 @@ async def _groq_generate(
     prompt = _build_prompt(question, sources)
     client = groq.AsyncGroq(api_key=os.getenv("GROQ_API_KEY"))
     response = await client.chat.completions.create(
-        model=os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile"),
+        model=os.getenv("GROQ_MODEL", "openai/gpt-oss-120b"),
         messages=[{"role": "user", "content": prompt}],
         temperature=0.3,
     )

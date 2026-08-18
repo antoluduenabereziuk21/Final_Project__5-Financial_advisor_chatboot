@@ -32,24 +32,59 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     db_client = None
     repo = None
 
-    try:
-        from rag.vector_store.client import VectorDbClient
-        from rag.vector_store.repository import VectorRepository
+    # Supabase HTTPS/RPC integration - Emilio Chasipanta.
+    # Purpose:
+    # Query the shared Supabase pgvector dataset over HTTPS when a direct
+    # PostgreSQL connection is unavailable. The original PostgreSQL path is
+    # preserved below as a backward-compatible fallback.
+    if settings.supabase_url and settings.supabase_key:
+        try:
+            from rag.vector_store.supabase_repository import SupabaseVectorRepository
 
-        db_client = VectorDbClient(
-            host=settings.vector_db_host,
-            port=settings.vector_db_port,
-            user=settings.vector_db_user,
-            password=settings.vector_db_password,
-            database=settings.vector_db_name,
-        )
-        await db_client.connect()
-        app.state.db_client = db_client
-        repo = VectorRepository(db_client)
-        app.state.repo = repo
-        log.info("Connected to vector database at %s:%s", settings.vector_db_host, settings.vector_db_port)
-    except Exception:
-        log.warning("Could not connect to vector DB – running without RAG retrieval", exc_info=True)
+            repo = SupabaseVectorRepository(
+                supabase_url=settings.supabase_url,
+                supabase_key=settings.supabase_key,
+            )
+
+            # Connectivity check using a lightweight estimated row count.
+            await repo.count()
+
+            app.state.repo = repo
+            log.info("Connected to Supabase vector repository over HTTPS")
+        except Exception:
+            repo = None
+            log.warning(
+                "Could not connect to Supabase vector repository",
+                exc_info=True,
+            )
+
+    # Original direct PostgreSQL/asyncpg implementation preserved as fallback.
+    if repo is None:
+        try:
+            from rag.vector_store.client import VectorDbClient
+            from rag.vector_store.repository import VectorRepository
+
+            db_client = VectorDbClient(
+                host=settings.vector_db_host,
+                port=settings.vector_db_port,
+                user=settings.vector_db_user,
+                password=settings.vector_db_password,
+                database=settings.vector_db_name,
+            )
+            await db_client.connect()
+            app.state.db_client = db_client
+            repo = VectorRepository(db_client)
+            app.state.repo = repo
+            log.info(
+                "Connected to vector database at %s:%s",
+                settings.vector_db_host,
+                settings.vector_db_port,
+            )
+        except Exception:
+            log.warning(
+                "Could not connect to vector DB – running without RAG retrieval",
+                exc_info=True,
+            )
 
     if repo is not None:
         from app.rag.adapter import RootRAGAdapterImpl
