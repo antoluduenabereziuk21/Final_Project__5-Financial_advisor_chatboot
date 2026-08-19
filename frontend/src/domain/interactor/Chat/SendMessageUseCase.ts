@@ -8,14 +8,17 @@ import type { IChatRepository } from "@/domain/repository/Chat/ChatRepository"
 export default class SendMessageUseCase {
   private readonly chatRepository!: IChatRepository
 
-  async execute(content: string): Promise<ISendMessageResult> {
+  async execute(
+    content: string,
+    conversationId?: string | null,
+  ): Promise<ISendMessageResult> {
     const trimmed = content.trim()
 
     if (!trimmed) {
       throw new Error("Message content cannot be empty.")
     }
 
-    return this.chatRepository.sendMessage(trimmed)
+    return this.chatRepository.sendMessage(trimmed, conversationId)
   }
 }
 
