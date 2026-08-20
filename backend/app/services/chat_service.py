@@ -20,12 +20,11 @@ class ChatService:
         self,
         message: str,
         conversation_id: str | None = None,
-        user_id: int | None = None,
     ) -> dict:
         resolved_conversation_id = self._conversation_service.ensure_conversation_id(
             conversation_id
         )
-        conversation_history = await self._conversation_service.get_history(
+        conversation_history = self._conversation_service.get_history(
             resolved_conversation_id
         )
 
@@ -34,11 +33,10 @@ class ChatService:
             conversation_history=conversation_history,
         )
 
-        message_id = await self._conversation_service.save_turn(
+        message_id = self._conversation_service.save_turn(
             conversation_id=resolved_conversation_id,
             user_message=message,
             assistant_message=result["answer"],
-            user_id=user_id,
         )
 
         sources = result.get("sources", [])

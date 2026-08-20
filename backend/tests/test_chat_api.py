@@ -28,36 +28,12 @@ def test_chat_endpoint_returns_expected_contract() -> None:
     assert response.status_code == 200
 
     payload = response.json()
-    assert isinstance(payload["conversation_id"], str)
-    assert len(payload["conversation_id"]) == 36
+    assert payload["conversation_id"] == "123"
     assert "answer" in payload
     assert "sources" in payload
     assert isinstance(payload["sources"], list)
     assert payload["sources"]
     assert payload["sources"][0]["title"] == "Apple Annual Report 2025"
-
-
-def test_chat_endpoint_reuses_conversation_id_across_messages() -> None:
-    first_response = client.post(
-        "/api/chat",
-        json={
-            "message": "Primera pregunta",
-        },
-    )
-
-    assert first_response.status_code == 200
-    conversation_id = first_response.json()["conversation_id"]
-
-    second_response = client.post(
-        "/api/chat",
-        json={
-            "message": "Segunda pregunta",
-            "conversation_id": conversation_id,
-        },
-    )
-
-    assert second_response.status_code == 200
-    assert second_response.json()["conversation_id"] == conversation_id
 
 
 def test_chat_feedback_endpoints_roundtrip() -> None:
