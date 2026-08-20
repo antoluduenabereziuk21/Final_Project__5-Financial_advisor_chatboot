@@ -1,12 +1,15 @@
 from fastapi.testclient import TestClient
+import pytest
 
 from app.main import app
 
+@pytest.fixture
+def client() -> TestClient:
+    with TestClient(app) as test_client:
+        yield test_client
 
-client = TestClient(app)
 
-
-def test_chat_endpoint_returns_expected_contract() -> None:
+def test_chat_endpoint_returns_expected_contract(client: TestClient) -> None:
     response = client.post(
         "/api/chat",
         json={
@@ -26,7 +29,7 @@ def test_chat_endpoint_returns_expected_contract() -> None:
     assert payload["sources"][0]["title"] == "Apple Annual Report 2025"
 
 
-def test_chat_feedback_endpoints_roundtrip() -> None:
+def test_chat_feedback_endpoints_roundtrip(client: TestClient) -> None:
     chat_response = client.post(
         "/api/chat",
         json={
@@ -67,7 +70,7 @@ def test_chat_feedback_endpoints_roundtrip() -> None:
     assert listed_payload["items"][-1]["message_id"] == message_id
 
 
-def test_sources_endpoint_returns_source_detail_for_chat_source() -> None:
+def test_sources_endpoint_returns_source_detail_for_chat_source(client: TestClient) -> None:
     chat_response = client.post(
         "/api/chat",
         json={
@@ -87,6 +90,49 @@ def test_sources_endpoint_returns_source_detail_for_chat_source() -> None:
     assert source_payload["title"] == first_source["title"]
 
 
-def test_sources_endpoint_returns_404_for_unknown_chunk() -> None:
+def test_sources_endpoint_returns_404_for_unknown_chunk(client: TestClient) -> None:
     source_response = client.get("/api/sources/does-not-exist")
     assert source_response.status_code == 404
+
+
+def test_conversation_history_endpoints_return_messages(client: TestClient) -> None:
+    conversation_id = "history-conv-1"
+
+    first_chat_response = client.post(
+        "/api/chat",
+        json={
+            "message": "Primera pregunta",
+            "conversation_id": conversation_id,
+        },
+    )
+    second_chat_response = client.post(
+        "/api/chat",
+        json={
+            "message": "Segunda pregunta",
+            "conversation_id": conversation_id,
+        },
+    )
+
+    assert first_chat_response.status_code == 200
+    assert second_chat_response.status_code == 200
+
+    conversations_response = client.get("/api/chat/conversations", params={"limit": 10})
+    assert conversations_response.status_code == 200
+    conversations_payload = conversations_response.json()
+    assert conversations_payload["items"]
+    assert any(
+        item["conversation_id"] == conversation_id
+        for item in conversations_payload["items"]
+    )
+
+    detail_response = client.get(f"/api/chat/conversations/{conversation_id}")
+    assert detail_response.status_code == 200
+    detail_payload = detail_response.json()
+    assert detail_payload["conversation_id"] == conversation_id
+    assert len(detail_payload["messages"]) >= 4
+    assert detail_payload["messages"][0]["role"] == "user"
+
+
+def test_conversation_detail_returns_404_for_unknown_conversation(client: TestClient) -> None:
+    detail_response = client.get("/api/chat/conversations/unknown-conversation")
+    assert detail_response.status_code == 404

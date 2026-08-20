@@ -16,6 +16,9 @@ Thumbs.db
 .env
 .env.local
 
+# Local sqlite artifacts (dev/test only)
+backend/*.db
+
 # Virtual environments
 .venv/
 venv/

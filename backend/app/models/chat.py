@@ -56,3 +56,31 @@ class SourceDetailResponse(BaseModel):
     relevance_score: Optional[float] = None
     text_snippet: Optional[str] = None
     conversation_id: Optional[str] = None
+
+
+class ConversationSummary(BaseModel):
+    conversation_id: str
+    user_id: Optional[str] = None
+    created_at: str
+    updated_at: str
+
+
+class ConversationListResponse(BaseModel):
+    items: list[ConversationSummary] = Field(default_factory=list)
+    total: int
+
+
+class ConversationMessageResponse(BaseModel):
+    message_id: str
+    role: Literal["user", "assistant"]
+    content: str
+    created_at: str
+    sources: list[dict[str, object]] = Field(default_factory=list)
+
+
+class ConversationDetailResponse(BaseModel):
+    conversation_id: str
+    user_id: Optional[str] = None
+    created_at: str
+    updated_at: str
+    messages: list[ConversationMessageResponse] = Field(default_factory=list)
