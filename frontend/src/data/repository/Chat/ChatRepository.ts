@@ -18,15 +18,11 @@ function createId(prefix: string): string {
 
 @injectable()
 export default class ChatRepository implements IChatRepository {
-  async sendMessage(
-    content: string,
-    conversationId?: string | null,
-  ): Promise<ISendMessageResult> {
+  async sendMessage(content: string): Promise<ISendMessageResult> {
     const createdAt = new Date().toISOString()
 
     const response = await httpClient.post<ChatApiResponse>("/api/chat", {
       message: content,
-      conversation_id: conversationId ?? undefined,
     })
 
     const data = response.data
@@ -44,7 +40,6 @@ export default class ChatRepository implements IChatRepository {
         content: data.answer,
         createdAt: new Date().toISOString(),
       },
-      conversationId: data.conversation_id ?? conversationId ?? null,
     }
   }
 }

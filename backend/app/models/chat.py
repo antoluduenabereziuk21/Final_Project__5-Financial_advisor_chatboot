@@ -8,7 +8,6 @@ class ChatRequest(BaseModel):
     conversation_id: Optional[str] = None
     sessionId: Optional[str] = None
     userId: Optional[str] = None
-    user_id: Optional[int] = None
 
 
 class ChatResponse(BaseModel):
