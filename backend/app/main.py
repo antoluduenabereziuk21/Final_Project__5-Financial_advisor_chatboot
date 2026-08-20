@@ -12,6 +12,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.api.chat import router as chat_router
 from app.api.routes import api_router
 from app.core.config import settings
+from app.repositories.conversation_repository import ConversationRepository
 from app.services.chat_service import ChatService
 from app.services.conversation_service import ConversationService
 from app.services.rag_service import RAGService
@@ -30,7 +31,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     configure_llm("groq" if settings.groq_api_key else None)
 
     db_client = None
+    conversation_db_client = None
     repo = None
+    conversation_repository = None
 
     # Supabase HTTPS/RPC integration - Emilio Chasipanta.
     # Purpose:
@@ -86,24 +89,51 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
                 exc_info=True,
             )
 
+    try:
+        from rag.vector_store.client import VectorDbClient
+
+        conversation_db_client = VectorDbClient(
+            host=settings.vector_db_host,
+            port=settings.vector_db_port,
+            user=settings.vector_db_user,
+            password=settings.vector_db_password,
+            database=settings.vector_db_name,
+        )
+        await conversation_db_client.connect()
+        app.state.conversation_db_client = conversation_db_client
+        conversation_repository = ConversationRepository(conversation_db_client)
+        log.info(
+            "Connected to conversation database at %s:%s",
+            settings.vector_db_host,
+            settings.vector_db_port,
+        )
+    except Exception:
+        log.warning(
+            "Could not connect to conversation database – running conversation history in memory",
+            exc_info=True,
+        )
+
     if repo is not None:
         from app.rag.adapter import RootRAGAdapterImpl
 
         adapter = RootRAGAdapterImpl(repo=repo)
         app.state.chat_service = ChatService(
             rag_service=RAGService(adapter=adapter),
-            conversation_service=ConversationService(),
+            conversation_service=ConversationService(conversation_repository),
         )
     else:
         app.state.chat_service = ChatService(
             rag_service=RAGService(),
-            conversation_service=ConversationService(),
+            conversation_service=ConversationService(conversation_repository),
         )
 
     yield
 
     if db_client is not None:
         await db_client.close()
+
+    if conversation_db_client is not None:
+        await conversation_db_client.close()
 
 
 def create_app() -> FastAPI:
