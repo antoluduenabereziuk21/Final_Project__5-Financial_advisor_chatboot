@@ -324,6 +324,16 @@ class VectorRepository:
             row = await conn.fetchval("SELECT COUNT(*) FROM rag_chunks")
             return row or 0
 
+    async def list_companies(self) -> list[dict]:
+        """Distinct (ticker, company) pairs actually present in the loaded
+        corpus. Used by EntityResolver (rag/retrieval/entity_resolver.py) to
+        know what a question can be matched against -- queried from
+        `documents` rather than `rag_chunks` since it's the same data at far
+        lower cardinality (~1.7K rows vs several hundred thousand)."""
+        async with self._client.pool.acquire() as conn:
+            rows = await conn.fetch("SELECT DISTINCT ticker, company FROM documents")
+            return [{"ticker": r["ticker"], "company": r["company"]} for r in rows]
+
     async def get_by_id(self, chunk_id: int) -> ChunkRecord | None:
         async with self._client.pool.acquire() as conn:
             row = await conn.fetchrow(

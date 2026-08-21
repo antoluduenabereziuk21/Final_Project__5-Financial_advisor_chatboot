@@ -83,6 +83,33 @@ class SupabaseVectorRepository:
             for row in rows
         ]
 
+    async def list_companies(self) -> list[dict]:
+        """Distinct (ticker, company) pairs actually present in the loaded
+        corpus, via Supabase's plain REST table endpoint (not the
+        match_rag_chunks RPC -- no embedding search needed here). PostgREST
+        doesn't expose SQL DISTINCT through query params, so this fetches
+        ticker+company for every `documents` row and de-duplicates
+        client-side; documents stays small (~1.7K rows even at full load),
+        so one unpaginated fetch is fine, unlike search_similar's per-query
+        embedding search against rag_chunks."""
+        async with httpx.AsyncClient(timeout=self._timeout) as client:
+            response = await client.get(
+                f"{self._url}/rest/v1/documents",
+                headers=self._headers(),
+                params={"select": "ticker,company", "limit": "10000"},
+            )
+            response.raise_for_status()
+            rows = response.json()
+
+        seen: set[tuple[str | None, str | None]] = set()
+        companies: list[dict] = []
+        for row in rows:
+            key = (row.get("ticker"), row.get("company"))
+            if key not in seen:
+                seen.add(key)
+                companies.append({"ticker": row.get("ticker"), "company": row.get("company")})
+        return companies
+
     async def count(self) -> int:
         """Return the number of indexed chunks visible through Supabase REST."""
 
