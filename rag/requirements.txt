@@ -29,3 +29,6 @@ httpx>=0.27
 
 # LLM
 groq>=1.6,<2.0
+
+# Testing (rag/llm/test_generator.py)
+pytest>=8.0

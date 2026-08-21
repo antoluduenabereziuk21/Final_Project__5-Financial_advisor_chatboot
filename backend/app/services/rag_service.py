@@ -27,28 +27,24 @@ class RAGService:
         top_k: int = 5,
     ) -> dict[str, Any]:
         if self._adapter is None:
+            # No RAG adapter wired up -- neither the Postgres nor the Supabase
+            # vector backend connected at startup (see backend/app/main.py
+            # lifespan). There is no real retrieval happening, so we must not
+            # fabricate a source or a citation to paper over that: doing so
+            # previously produced a fake-but-plausible "Apple Annual Report
+            # 2025" citation regardless of what was actually asked. Report the
+            # outage plainly instead.
             return {
-                "answer": "RAG root adapter is not configured yet.",
-                "confidence_flag": "low_confidence",
-                "sources": [
-                    {
-                        "chunk_id": "fallback-chunk",
-                        "company": "unknown",
-                        "ticker": "UNKNOWN",
-                        "fiscal_year": None,
-                        "form_type": None,
-                        "accounting_standard": None,
-                        "canonical_section": None,
-                        "source_file": None,
-                        "page_start": None,
-                        "page_end": None,
-                        "relevance_score": 0.0,
-                        "text_snippet": "Fallback source while the root RAG adapter is not wired.",
-                    }
-                ],
+                "answer": (
+                    "The retrieval system is currently unavailable, so I can't "
+                    "provide a data-backed answer right now. Please try again "
+                    "later."
+                ),
+                "confidence_flag": "system_unavailable",
+                "sources": [],
                 "retrieval_meta": {
                     "filters_applied": filters or {},
-                    "chunks_considered": 1,
+                    "chunks_considered": 0,
                     "model": "all-MiniLM-L6-v2",
                 },
             }

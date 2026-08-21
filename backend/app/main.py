@@ -88,11 +88,39 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
     if repo is not None:
         from app.rag.adapter import RootRAGAdapterImpl
+        from rag.retrieval.entity_resolver import EntityResolver, KnownEntity
 
         adapter = RootRAGAdapterImpl(repo=repo)
+
+        # 2.6: build the entity resolver from the companies actually loaded
+        # right now, not a hardcoded list -- so it can only ever resolve a
+        # question to something retrieval could actually find. Best-effort:
+        # if this fails (e.g. `documents` unreachable), fall back to no
+        # resolver rather than failing startup -- the app should still work
+        # unfiltered, same as before this existed.
+        entity_resolver = None
+        try:
+            known_rows = await repo.list_companies()
+            known_entities = [
+                KnownEntity(company=row["company"], ticker=row.get("ticker"))
+                for row in known_rows
+                if row.get("company")
+            ]
+            entity_resolver = EntityResolver(known_entities)
+            log.info(
+                "Entity resolver ready with %d known companies", len(known_entities)
+            )
+        except Exception:
+            log.warning(
+                "Could not load known companies for entity resolution -- "
+                "retrieval will remain unfiltered",
+                exc_info=True,
+            )
+
         app.state.chat_service = ChatService(
             rag_service=RAGService(adapter=adapter),
             conversation_service=ConversationService(),
+            entity_resolver=entity_resolver,
         )
     else:
         app.state.chat_service = ChatService(

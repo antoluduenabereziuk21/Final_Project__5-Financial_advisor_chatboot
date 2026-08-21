@@ -33,7 +33,7 @@ source .venv/bin/activate      # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
-Requires Python 3.9+.
+Requires Python 3.11+. (Previously documented as 3.9+ -- that's wrong: `backend/app/services/chat_service.py` imports `datetime.UTC`, added in 3.11, and several files rely on bare `X | None` type syntax that only evaluates at runtime on 3.10+. Confirmed by actually hitting `ImportError: cannot import name 'UTC' from 'datetime'` on a 3.9 venv.)
 
 ## 3. Where to put the embeddings (`output_embeding`)
 

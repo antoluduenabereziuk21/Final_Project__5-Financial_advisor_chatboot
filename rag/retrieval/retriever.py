@@ -15,6 +15,9 @@ class VectorSearchRepository(Protocol):
     ) -> list[SearchResult]:
         ...
 
+    async def list_companies(self) -> list[dict]:
+        ...
+
 
 async def retrieve(
     repo: VectorSearchRepository,
