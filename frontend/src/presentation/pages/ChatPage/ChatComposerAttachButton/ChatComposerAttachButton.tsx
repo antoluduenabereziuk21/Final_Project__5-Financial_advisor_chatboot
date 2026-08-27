@@ -1,5 +1,3 @@
-import { Paperclip } from "lucide-react"
-
 import { IconButton } from "@/presentation/components/IconButton"
 
 import {
@@ -20,7 +18,9 @@ function ChatComposerAttachButton({
       disabled={disabled}
       onClick={onAttach}
     >
-      <Paperclip />
+      <span aria-hidden="true" className="text-base leading-none">
+        {chatComposerAttachButtonCopies.icon}
+      </span>
     </IconButton>
   )
 }

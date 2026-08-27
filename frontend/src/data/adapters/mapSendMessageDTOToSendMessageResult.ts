@@ -17,5 +17,6 @@ export function mapSendMessageDTOToSendMessageResult(
   return {
     userMessage: mapChatMessageDTOToChatMessage(dto.userMessage),
     assistantMessage: mapChatMessageDTOToChatMessage(dto.assistantMessage),
+    conversationId: null,
   }
 }

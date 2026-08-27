@@ -10,6 +10,7 @@ function ChatComposer({
   isSending,
   onValueChange,
   onSend,
+  onCancel,
   onAttach,
 }: ChatComposerProps) {
   const canSubmit = value.trim().length > 0 && !isSending
@@ -27,7 +28,12 @@ function ChatComposer({
           onValueChange={onValueChange}
           onSubmit={onSend}
         />
-        <ChatComposerSendButton disabled={!canSubmit} onSend={onSend} />
+        <ChatComposerSendButton
+          isSending={isSending}
+          disabled={!canSubmit}
+          onSend={onSend}
+          onCancel={onCancel}
+        />
       </div>
       <ChatComposerDisclaimer text={chatComposerCopies.disclaimer} />
     </div>

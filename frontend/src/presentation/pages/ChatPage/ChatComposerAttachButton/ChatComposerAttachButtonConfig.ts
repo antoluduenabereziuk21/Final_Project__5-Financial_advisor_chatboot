@@ -4,5 +4,6 @@ export interface ChatComposerAttachButtonProps {
 }
 
 export const chatComposerAttachButtonCopies = {
-  ariaLabel: "Attach a file",
+  ariaLabel: "Financial chat assistant",
+  icon: "📈",
 } as const

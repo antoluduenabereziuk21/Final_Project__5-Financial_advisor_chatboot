@@ -7,6 +7,7 @@ import { UseCaseTypes } from "@/domain/entities/structure/UseCaseTypes"
 import type { IChatRepository } from "@/domain/repository/Chat/ChatRepository"
 import type { IWelcomeRepository } from "@/domain/repository/Welcome/WelcomeRepository"
 import SendMessageUseCase from "@/domain/interactor/Chat/SendMessageUseCase"
+import SubmitFeedbackUseCase from "@/domain/interactor/Chat/SubmitFeedbackUseCase"
 import GetWelcomeContentUseCase from "@/domain/interactor/Welcome/GetWelcomeContentUseCase"
 
 const container = new Container()
@@ -28,5 +29,9 @@ container
 container
   .bind<SendMessageUseCase>(UseCaseTypes.SendMessageUseCase)
   .to(SendMessageUseCase)
+
+container
+  .bind<SubmitFeedbackUseCase>(UseCaseTypes.SubmitFeedbackUseCase)
+  .to(SubmitFeedbackUseCase)
 
 export { container }

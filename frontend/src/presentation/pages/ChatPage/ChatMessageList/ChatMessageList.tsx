@@ -11,14 +11,17 @@ import {
 
 function ChatMessageList({
   messages,
+  conversationId,
+  feedbackByMessageId,
   isSending,
   error,
   messagesEndRef,
+  onFeedback,
 }: ChatMessageListProps) {
   const showEmptyState = messages.length === 0 && !isSending
 
   return (
-    <ScrollArea className="min-h-0 flex-1">
+    <ScrollArea className="h-full">
       <div className="mx-auto flex w-full max-w-3xl flex-col gap-4 px-6 py-8">
         {showEmptyState ? (
           <ChatEmptyState message={chatMessageListCopies.emptyState} />
@@ -27,8 +30,20 @@ function ChatMessageList({
         {messages.map((message) => (
           <ChatMessageBubble
             key={message.id}
+            id={message.id}
             role={message.role}
             content={message.content}
+            createdAt={message.createdAt}
+            sources={message.sources}
+            conversationId={
+              message.role === "assistant" ? conversationId : null
+            }
+            feedbackStatus={feedbackByMessageId[message.id] ?? "idle"}
+            onFeedback={
+              message.role === "assistant"
+                ? (rating) => onFeedback(message.id, rating)
+                : undefined
+            }
           />
         ))}
 

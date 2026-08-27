@@ -1,3 +1,5 @@
+import type { IChatSource } from "@/domain/entities/ChatSource"
+
 export type ChatMessageRole = "user" | "assistant"
 
 export interface IChatMessage {
@@ -5,4 +7,5 @@ export interface IChatMessage {
   role: ChatMessageRole
   content: string
   createdAt: string
+  sources?: IChatSource[]
 }
