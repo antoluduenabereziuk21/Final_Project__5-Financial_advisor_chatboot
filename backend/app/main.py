@@ -86,6 +86,25 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
                 exc_info=True,
             )
 
+    # Conversation/feedback persistence reuses `db_client`'s pool -- it is
+    # only wired up on the direct-Postgres path, not Supabase (a read-only
+    # HTTPS/RPC client with no write endpoints, see
+    # rag.vector_store.supabase_repository). A prior attempt at this
+    # persistence opened a *second* VectorDbClient/pool against the same
+    # database just for conversations (reverted, see commit ad04386);
+    # reusing db_client here avoids that duplication.
+    conversation_repository = None
+    if db_client is not None:
+        from app.repositories.conversation_repository import ConversationRepository
+
+        conversation_repository = ConversationRepository(db_client)
+        log.info("Conversation/feedback persistence backed by Postgres")
+    else:
+        log.warning(
+            "No direct Postgres connection -- conversation history and "
+            "feedback will not survive a restart"
+        )
+
     if repo is not None:
         from app.rag.adapter import RootRAGAdapterImpl
         from rag.retrieval.entity_resolver import EntityResolver, KnownEntity
@@ -119,13 +138,16 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
         app.state.chat_service = ChatService(
             rag_service=RAGService(adapter=adapter),
-            conversation_service=ConversationService(),
+            conversation_service=ConversationService(conversation_repository),
             entity_resolver=entity_resolver,
+            conversation_repository=conversation_repository,
+            vector_repo=repo,
         )
     else:
         app.state.chat_service = ChatService(
             rag_service=RAGService(),
-            conversation_service=ConversationService(),
+            conversation_service=ConversationService(conversation_repository),
+            conversation_repository=conversation_repository,
         )
 
     yield

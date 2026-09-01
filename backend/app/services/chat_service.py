@@ -11,18 +11,20 @@ from typing import TYPE_CHECKING, Any
 from app.services.conversation_service import ConversationService
 from app.services.rag_service import RAGService
 
-# Lazy/type-check-only import, deliberately not a top-level runtime import:
+# Lazy/type-check-only imports, deliberately not top-level runtime imports:
 # backend/app/main.py imports ChatService (this module) before it inserts
 # the project root onto sys.path (that insertion happens further down in
 # main.py, and every other rag.* import from backend/app/* is already
 # deferred into a function body for the same reason -- see main.py's
 # lifespan()). A top-level import here breaks at process startup with
 # "ModuleNotFoundError: No module named 'rag'" (confirmed real
-# 2026-08-21). `from __future__ import annotations` above means the
-# `EntityResolver` annotation below is never evaluated at runtime, so this
-# only needs to be visible to type checkers.
+# 2026-08-21). `from __future__ import annotations` above means these
+# annotations are never evaluated at runtime, so this only needs to be
+# visible to type checkers.
 if TYPE_CHECKING:
+    from app.repositories.conversation_repository import ConversationRepository
     from rag.retrieval.entity_resolver import EntityResolver
+    from rag.retrieval.retriever import VectorSearchRepository
 
 
 class ChatService:
@@ -31,10 +33,20 @@ class ChatService:
         rag_service: RAGService,
         conversation_service: ConversationService,
         entity_resolver: EntityResolver | None = None,
+        conversation_repository: ConversationRepository | None = None,
+        vector_repo: VectorSearchRepository | None = None,
     ) -> None:
         self._rag_service = rag_service
         self._conversation_service = conversation_service
         self._entity_resolver = entity_resolver
+        # Backs /api/chat/feedback when Postgres is connected (see main.py);
+        # falls back to the in-memory dict below otherwise, same degradation
+        # pattern as ConversationService/RAGService use for their own state.
+        self._conversation_repository = conversation_repository
+        # Backs /api/sources/{chunk_id} via rag_chunks.get_by_id when
+        # available (see get_source_detail below); falls back to the
+        # in-memory index otherwise.
+        self._vector_repo = vector_repo
         self._feedback_by_conversation: dict[str, list[dict[str, Any]]] = {}
         self._source_index: dict[str, dict[str, Any]] = {}
 
@@ -43,10 +55,10 @@ class ChatService:
         message: str,
         conversation_id: str | None = None,
     ) -> dict:
-        resolved_conversation_id = self._conversation_service.ensure_conversation_id(
+        resolved_conversation_id = await self._conversation_service.ensure_conversation_id(
             conversation_id
         )
-        conversation_history = self._conversation_service.get_history(
+        conversation_history = await self._conversation_service.get_history(
             resolved_conversation_id
         )
 
@@ -68,12 +80,6 @@ class ChatService:
             question=message,
             conversation_history=conversation_history,
             filters=filters,
-        )
-
-        message_id = self._conversation_service.save_turn(
-            conversation_id=resolved_conversation_id,
-            user_message=message,
-            assistant_message=result["answer"],
         )
 
         sources = result.get("sources", [])
@@ -99,11 +105,20 @@ class ChatService:
                 normalized_sources.append(normalized_source)
 
                 chunk_id = normalized_source.get("chunk_id")
-                if isinstance(chunk_id, str) and chunk_id:
-                    self._source_index[chunk_id] = {
+                if chunk_id is not None:
+                    self._source_index[str(chunk_id)] = {
                         **normalized_source,
                         "conversation_id": resolved_conversation_id,
                     }
+
+        message_id = await self._conversation_service.save_turn(
+            conversation_id=resolved_conversation_id,
+            user_message=message,
+            assistant_message=result["answer"],
+            sources=normalized_sources,
+            confidence_flag=result.get("confidence_flag"),
+            retrieval_meta=result.get("retrieval_meta"),
+        )
 
         return {
             "answer": result["answer"],
@@ -112,7 +127,7 @@ class ChatService:
             "message_id": message_id,
         }
 
-    def save_feedback(
+    async def save_feedback(
         self,
         conversation_id: str,
         message_id: str,
@@ -120,6 +135,15 @@ class ChatService:
         reason: str | None = None,
         user_id: str | None = None,
     ) -> dict[str, Any]:
+        if self._conversation_repository is not None:
+            return await self._conversation_repository.save_feedback(
+                message_id=message_id,
+                conversation_id=conversation_id,
+                rating=rating,
+                reason=reason,
+                user_id=user_id,
+            )
+
         import uuid
 
         feedback = {
@@ -137,8 +161,44 @@ class ChatService:
         conversation_feedback.append(feedback)
         return feedback
 
-    def list_feedback(self, conversation_id: str) -> list[dict[str, Any]]:
+    async def list_feedback(self, conversation_id: str) -> list[dict[str, Any]]:
+        if self._conversation_repository is not None:
+            return await self._conversation_repository.list_feedback(conversation_id)
+
         return list(self._feedback_by_conversation.get(conversation_id, []))
 
-    def get_source_detail(self, chunk_id: str) -> dict[str, Any] | None:
+    async def get_source_detail(self, chunk_id: str) -> dict[str, Any] | None:
+        # chunk_id in sources[] is rag_chunks.id (see rag/retrieval/retriever.py)
+        # -- when a vector repo that supports lookup by id is connected, query
+        # the real row instead of relying on a process-local cache. Repos that
+        # only support retrieval over HTTPS (e.g. Supabase, see
+        # rag/vector_store/supabase_repository.py) don't implement get_by_id;
+        # fall back to the in-memory index for those, same as before.
+        if self._vector_repo is not None and hasattr(self._vector_repo, "get_by_id"):
+            try:
+                numeric_chunk_id = int(chunk_id)
+            except ValueError:
+                numeric_chunk_id = None
+
+            if numeric_chunk_id is not None:
+                record = await self._vector_repo.get_by_id(numeric_chunk_id)
+                if record is not None:
+                    title = record.source_file or record.company or str(record.id) or "Unknown source"
+                    return {
+                        "chunk_id": str(record.id),
+                        "title": title,
+                        "company": record.company,
+                        "ticker": record.ticker,
+                        "fiscal_year": record.fiscal_year,
+                        "form_type": record.form_type,
+                        "accounting_standard": record.accounting_standard,
+                        "canonical_section": record.canonical_section,
+                        "source_file": record.source_file,
+                        "page_start": record.page_start,
+                        "page_end": record.page_end,
+                        "relevance_score": None,
+                        "text_snippet": record.content[:300] if record.content else None,
+                        "conversation_id": None,
+                    }
+
         return self._source_index.get(chunk_id)
