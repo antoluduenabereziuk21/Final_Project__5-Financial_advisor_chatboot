@@ -91,3 +91,15 @@ pre_procesing_2/mismatch_check.csv
 
 # Downloaded / generated
 downolad_files/corpus_profile.csv
+
+# Local env backups (contain credentials)
+.env.*
+!.env.example
+
+# RAGAS generated artefacts (regenerable; contain full chunk text)
+RAGAS/results/raw_pipeline_outputs.csv
+RAGAS/results/*.prev
+RAGAS/results/ragas_scores*.csv
+RAGAS/eval_fact_candidates.csv
+RAGAS/corpus_inventory.csv
+RAGAS/preflight_report.txt

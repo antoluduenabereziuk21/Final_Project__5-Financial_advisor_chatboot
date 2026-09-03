@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import os
 from typing import Any
 
 import asyncpg
@@ -309,10 +310,57 @@ class VectorRepository:
             conditions.append(f"fiscal_year = ${len(values) + 1}")
             values.append(params.fiscal_year)
 
-        if conditions:
-            sql += " WHERE " + " AND ".join(conditions)
+        # Hard cap on chunk size. The corpus contains 1,544 chunks over 20,000
+        # chars, the largest 2,483,577 -- whole documents that were never split,
+        # because their PDF text extraction failed and left no sentence
+        # boundaries for the splitter to find. Median chunk is 2,494 chars.
+        # Such a chunk is unusable as context (2.4MB is ~600k tokens, past any
+        # context window) and retrieving one costs an entire provider daily
+        # budget in a single call: a 112,893-char chunk produced a 92,564-token
+        # request against a 200,000/day Groq cap on 2026-09-02.
+        # Set RAG_MAX_CHUNK_CHARS=0 to disable.
+        max_chars = int(os.getenv("RAG_MAX_CHUNK_CHARS", "20000"))
+        length_cond = ""
+        if max_chars > 0:
+            values.append(max_chars)
+            length_cond = f"length(content) < ${len(values)}"
 
-        sql += f" ORDER BY embedding <=> $1::vector LIMIT ${len(values) + 1}"
+        # pgvector: an ANN index (IVFFlat / HNSW) is scanned BEFORE the WHERE
+        # clause is applied. The index hands back a fixed-size candidate set
+        # -- ivfflat.probes lists, or hnsw.ef_search neighbours -- and the
+        # filter then throws away whatever does not match. If none of those
+        # global nearest chunks belong to the filtered company/year, the query
+        # returns ZERO rows while the matching rows sit untouched in the table.
+        #
+        # Measured on 2026-09-02: company='amgen-inc' AND fiscal_year=2021
+        # matches 276 rows on its own; add "ORDER BY embedding <=> $1::vector
+        # LIMIT 5" and it returns 0. 29 of 68 eval questions failed exactly
+        # this way and were reported to the user as "company not found".
+        #
+        # MATERIALIZED forces the filter to be evaluated first, so the KNN
+        # runs over the filtered subset only. That makes it an EXACT nearest
+        # neighbour search rather than an approximate one -- which is both
+        # correct and cheap here, since a company+year filter leaves a few
+        # hundred rows, not hundreds of thousands. The unfiltered path keeps
+        # using the ANN index, which is what it is for.
+        if conditions:
+            # The length cap goes INSIDE the CTE, where it is free: the
+            # prefilter is already scanning this company's rows.
+            inner = " AND ".join(conditions + ([length_cond] if length_cond else []))
+            sql = (
+                "WITH filtered AS MATERIALIZED (SELECT * FROM rag_chunks WHERE "
+                + inner
+                + f") SELECT {_SEARCH_COLUMNS} FROM filtered"
+                + f" ORDER BY embedding <=> $1::vector LIMIT ${len(values) + 1}"
+            )
+        else:
+            # Unfiltered: keep the ANN index doing the work and apply the cap
+            # as an ordinary post-filter on its candidates. Deliberately NOT
+            # routed through the CTE -- prefiltering 403,864 rows by length
+            # would turn every open question into an exact scan.
+            if length_cond:
+                sql += f" WHERE {length_cond}"
+            sql += f" ORDER BY embedding <=> $1::vector LIMIT ${len(values) + 1}"
         values.append(params.top_k)
 
         async with self._client.pool.acquire() as conn:
