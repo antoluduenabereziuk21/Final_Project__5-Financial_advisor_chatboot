@@ -109,3 +109,9 @@ RAGAS/preflight_report.txt
 COWORK_CONTEXT.md
 downolad_files/
 
+
+*.bak
+~$*
+COWORK_CONTEXT.md
+downolad_files/
+
