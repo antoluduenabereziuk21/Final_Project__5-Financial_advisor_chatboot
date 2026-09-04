@@ -103,3 +103,9 @@ RAGAS/results/ragas_scores*.csv
 RAGAS/eval_fact_candidates.csv
 RAGAS/corpus_inventory.csv
 RAGAS/preflight_report.txt
+
+*.bak
+~$*
+COWORK_CONTEXT.md
+downolad_files/
+
