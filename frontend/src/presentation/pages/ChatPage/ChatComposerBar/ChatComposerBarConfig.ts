@@ -1,6 +1,7 @@
 export interface ChatComposerBarProps {
   isSending: boolean
-  onSend: (content: string) => void | Promise<void>
+  onSend: (content: string) => boolean | Promise<boolean>
+  onCancel: () => void
 }
 
 export const chatComposerBarCopies = {} as const

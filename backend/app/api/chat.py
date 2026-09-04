@@ -32,7 +32,7 @@ async def save_chat_feedback(
     request: ChatFeedbackRequest, fastapi_request: Request
 ) -> ChatFeedback:
     chat_service = fastapi_request.app.state.chat_service
-    feedback = chat_service.save_feedback(
+    feedback = await chat_service.save_feedback(
         conversation_id=request.conversation_id,
         message_id=request.message_id,
         rating=request.rating,
@@ -48,14 +48,14 @@ async def list_chat_feedback(
     conversation_id: str = Query(..., min_length=1),
 ) -> ChatFeedbackListResponse:
     chat_service = fastapi_request.app.state.chat_service
-    items = chat_service.list_feedback(conversation_id=conversation_id)
+    items = await chat_service.list_feedback(conversation_id=conversation_id)
     return ChatFeedbackListResponse(items=[ChatFeedback(**item) for item in items], total=len(items))
 
 
 @router.get("/sources/{chunk_id}", response_model=SourceDetailResponse)
 async def get_source_detail(chunk_id: str, fastapi_request: Request) -> SourceDetailResponse:
     chat_service = fastapi_request.app.state.chat_service
-    source = chat_service.get_source_detail(chunk_id=chunk_id)
+    source = await chat_service.get_source_detail(chunk_id=chunk_id)
     if source is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Source not found")
 

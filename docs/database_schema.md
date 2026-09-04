@@ -105,6 +105,18 @@ Debe listar las 6 tablas: `users`, `conversations`, `chat_messages`,
 | `retrieval_meta` | `JSONB` | metadata del retrieval |
 | `created_at` | `TIMESTAMPTZ` | |
 
+#### `message_feedback`
+
+| Columna | Tipo | Descripción |
+|---|---|---|
+| `id` | `BIGSERIAL` PK | |
+| `message_id` | `BIGINT` FK → `chat_messages(id)` ON DELETE CASCADE | |
+| `conversation_id` | `UUID` FK → `conversations(id)` ON DELETE CASCADE | |
+| `rating` | `TEXT` CHECK (`'up'` \| `'down'`) | |
+| `reason` | `TEXT` | opcional |
+| `user_id` | `BIGINT` FK → `users(id)` ON DELETE SET NULL | nullable (sesiones anónimas) |
+| `created_at` | `TIMESTAMPTZ` | |
+
 ### RAG vectorial (pgvector)
 
 #### `companies`
@@ -161,6 +173,7 @@ Debe listar las 6 tablas: `users`, `conversations`, `chat_messages`,
 | `idx_documents_ticker_year` | `documents` | `(ticker, fiscal_year)` | consultas por documento |
 | `idx_conversations_user_id` | `conversations` | `(user_id)` | chat por usuario |
 | `idx_chat_messages_conversation` | `chat_messages` | `(conversation_id, id)` | historial por conversación |
+| `idx_message_feedback_message` | `message_feedback` | `(message_id)` | feedback por mensaje |
 
 Uniques: `users.email`, `users.username`, `companies.ticker`, `documents.source_file`.
 
@@ -172,6 +185,10 @@ Uniques: `users.email`, `users.username`, `companies.ticker`, `documents.source_
   (RAG/pgvector) y `UserRecord`, `ConversationRecord`, `ChatMessageRecord` (aplicación).
 - `rag/vector_store/repository.py` — acceso asyncpg (insert, `search_similar` con
   filtros tipados, `get_neighbors`, `count`, `get_by_id`, `delete_all`).
-- Estado: la capa de chat del backend (`backend/app/services/conversation_service.py`)
-  todavía guarda en memoria; las tablas `users`/`conversations`/`chat_messages` están
-  listas para cuando se conecte la persistencia.
+- `backend/app/repositories/conversation_repository.py` — persiste
+  `conversations`/`chat_messages`/`message_feedback` reutilizando el pool de
+  `VectorDbClient` ya conectado en `backend/app/main.py` (no abre una conexión
+  propia). Solo se activa en el camino de Postgres directo; en modo Supabase
+  (HTTPS/RPC de solo lectura) o sin backend conectado, `ConversationService` y
+  `ChatService` caen a estado en memoria (se pierde al reiniciar el proceso).
+  Ver `docs/adr/0001-conversation-persistence.md`.

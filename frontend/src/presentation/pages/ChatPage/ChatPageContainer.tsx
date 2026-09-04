@@ -5,7 +5,16 @@ import { useChat } from "@/presentation/hooks/useChat"
 import { ChatPage } from "./ChatPage"
 
 function ChatPageContainer() {
-  const { messages, isSending, error, sendMessage } = useChat()
+  const {
+    messages,
+    conversationId,
+    feedbackByMessageId,
+    isSending,
+    error,
+    sendMessage,
+    cancelMessage,
+    submitFeedback,
+  } = useChat()
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -21,10 +30,14 @@ function ChatPageContainer() {
   return (
     <ChatPage
       messages={messages}
+      conversationId={conversationId}
+      feedbackByMessageId={feedbackByMessageId}
       isSending={isSending}
       error={error}
       messagesEndRef={messagesEndRef}
       onSend={sendMessage}
+      onCancel={cancelMessage}
+      onFeedback={submitFeedback}
     />
   )
 }

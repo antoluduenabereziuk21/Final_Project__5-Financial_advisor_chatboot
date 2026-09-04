@@ -3,12 +3,14 @@ export interface ChatComposerProps {
   isSending: boolean
   onValueChange: (value: string) => void
   onSend: () => void
+  onCancel: () => void
   onAttach?: () => void
 }
 
 export interface ChatComposerContainerProps {
   isSending: boolean
-  onSend: (content: string) => void | Promise<void>
+  onSend: (content: string) => boolean | Promise<boolean>
+  onCancel: () => void
 }
 
 export const chatComposerCopies = {

@@ -6,6 +6,7 @@ import type { ChatComposerContainerProps } from "./ChatComposerConfig"
 function ChatComposerContainer({
   isSending,
   onSend,
+  onCancel,
 }: ChatComposerContainerProps) {
   const [value, setValue] = useState("")
 
@@ -16,8 +17,11 @@ function ChatComposerContainer({
       return
     }
 
-    setValue("")
-    await onSend(trimmed)
+    const sent = await onSend(trimmed)
+
+    if (sent) {
+      setValue("")
+    }
   }
 
   return (
@@ -28,6 +32,7 @@ function ChatComposerContainer({
       onSend={() => {
         void handleSend()
       }}
+      onCancel={onCancel}
     />
   )
 }
