@@ -56,6 +56,21 @@ CREATE INDEX IF NOT EXISTS idx_chat_messages_conversation
     ON chat_messages(conversation_id, id);
 
 -- ----------------------------------------------------------------------------
+-- Aplicacion: feedback por mensaje (thumbs up/down)
+-- ----------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS message_feedback (
+    id              BIGSERIAL PRIMARY KEY,
+    message_id      BIGINT NOT NULL REFERENCES chat_messages(id) ON DELETE CASCADE,
+    conversation_id UUID NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
+    rating          TEXT NOT NULL CHECK (rating IN ('up', 'down')),
+    reason          TEXT,
+    user_id         BIGINT REFERENCES users(id) ON DELETE SET NULL,
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_message_feedback_message ON message_feedback(message_id);
+
+-- ----------------------------------------------------------------------------
 -- RAG: companies (referencia, ticker unico)
 -- ----------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS companies (
