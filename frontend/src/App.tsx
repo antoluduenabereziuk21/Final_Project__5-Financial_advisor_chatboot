@@ -1,5 +1,5 @@
-import { DemoPage } from "@/presentation/pages/DemoPage"
+import { ChatPage } from "@/presentation/pages/ChatPage"
 
 export default function App() {
-  return <DemoPage />
+  return <ChatPage />
 }

@@ -5,3 +5,7 @@ venv/
 __pycache__/
 *.pyc
 .DS_Store
+
+# bulk_load.py's input: colab_embed_chunks.py's parquet output, ~GB-scale
+# per-corpus binary data, not source -- see rag/SETUP.md
+# output/

@@ -1,7 +1,67 @@
-# pre_procesing_2 results
+# rag/ingestion results
 
-Status: all 10 sample files processed end-to-end, including the two large
-files (289/483 pages).
+Status: current pipeline code (`cleaning.py`, `chunking.py`, `metadata.py`,
+`orchestrate.py`, `run_batch.py`, `canonical_sections.py`, `check_mismatch_only.py`)
+verified line-by-line on 2026-08-10 against the corpus batch actually in use.
+This file previously described itself as `pre_procesing_2 results` and
+contained two claims that are now confirmed stale -- corrected in the status
+section below, original findings kept below that since they're still
+accurate. Read this section first; it supersedes the "Open items" section
+at the bottom where the two disagree.
+
+## Status update (2026-08-10)
+
+**The 300-doc `output_batch/` claim is stale -- a real batch already exists
+and is current-schema.** The old "Open items" section below says
+`output_batch/` predates `chunk_index` and needs a full rebuild. That was
+true when written. It no longer is: a batch of **1,819 chunked JSON files**
+(not 300) exists (currently archived outside this repo at
+`final_project/arquive/pre_procesing_2/output_batch/`, `.gitignore`'d, never
+committed) and is confirmed to be **post-fix schema** -- inspected a sample
+chunk directly (`NASDAQ_AACG_2018.json`): has `chunk_index`, has
+`part_number` in `metadata`, does **not** have `likely_numeric_dense`.
+That's an exact field-for-field match to what the current code in this
+folder produces (verified by reading `orchestrate.py` lines ~49-144 against
+the sample). This is the batch actually being used downstream for
+embeddings, per direct instruction -- treat `output_batch/` (1,819 files) as
+the current production chunk set, not the 300-file `output_batch` described
+in this file's original write-up.
+
+**Provenance gap, not fully resolved.** `output_batch/batch_results.csv`
+inside that batch logs exactly 300 rows, but the directory holds 1,819 JSON
+files -- ~1,519 files exist with no corresponding log row. `run_batch.py`
+is resumable and appends to the same results CSV across `--source profile`
+and `--source mismatch` runs, so this gap isn't explained by normal
+resumed-run behavior. Possible causes not yet checked: a truncated/
+overwritten CSV, direct `orchestrate.py` calls bypassing `run_batch.py`, or
+files merged in from a separate run's output directory. Don't treat
+`batch_results.csv` as a complete manifest of what's in `output_batch/`
+until this is resolved.
+
+**Non-NASDAQ files present, silently degraded.** 1,813 of the 1,819 files
+are `NASDAQ_*`; 3 are `AMEX_*` (ATRS, three fiscal years), 1 is a TSX file,
+1 is NYSE. `metadata.TICKER_RE` only matches a `NASDAQ_` prefix, so for
+these 5 files `ticker` and `fiscal_year_from_filename` come back `None`
+silently (no error, no flag) -- small blast radius (5/1,819) but real, and
+it means the corpus isn't purely NASDAQ despite the project's stated scope.
+
+**`mismatch_check.csv` coverage claim was also stale -- corrected here.**
+The "Batch runner" section below cites "~3,324 files at time of writing,
+~33% of the corpus" for `mismatch_check.csv`. Checked directly (2026-08-10):
+the original `mismatch_check.csv` has 299 data rows; a separate file,
+`mismatch_check - Copy.csv` (same location, `pre_procesing_2/`, both now
+archived), has 2,036 data rows -- **20.7% of the 9,851-file corpus**, not
+33%. The two files share **zero overlapping `pdf_path` values** -- they are
+not sequential snapshots of one resumable run, they're two separate,
+differently-scoped invocations of `check_mismatch_only.py` (one likely
+`--source csv` restricted to the 300-file profiling sample, the other a
+default whole-corpus scan that stopped partway through, alphabetically
+early). `mismatch_check - Copy.csv` has 59 confirmed `company_name_mismatch
+= True` rows, 437 `None`/unchecked rows, and 7 rows with a real extraction
+`error`. Schema (`pdf_path,company,registrant_name,company_name_mismatch,error`)
+matches what `run_batch.py --source mismatch` expects exactly -- no code
+change needed to point at it once the file itself is back in this folder
+(it currently is not; see repo-orientation discussion for where it moved).
 
 ## Results per document (after the 2026-07-26 fix round)
 
@@ -124,8 +184,10 @@ balance sheet on p.49 of the source PDF) appears in a chunk from
 `NASDAQ_PIH_2016.json`, and that chunk is correctly flagged
 `likely_numeric_dense: true` (density 0.211) -- confirms the section 7
 "no silent data loss" criterion for at least this one figure, and confirms
-the flag catches it.
-
+the flag catches it. Note: `likely_numeric_dense` was later dropped from
+the schema (see 2026-07-28 audit below) in favor of storing the raw
+`numeric_density` float -- the finding above is still valid, it just now
+reads as `numeric_density: 0.211 >= NUMERIC_DENSITY_THRESHOLD (0.10)`.
 
 ## Cover-page boilerplate-stripping bug (2026-07-28)
 
@@ -139,9 +201,10 @@ it's load-bearing content, not noise. Confirmed real cases: `Blackbaud,
 Inc.` (blackbaud-inc), `BLOOMIN' BRANDS, INC.` (bloomin-brands-inc) were
 each the *only* line flagged as boilerplate, and stripping it left
 `REGISTRANT_NAME_RE` capturing the line above instead ("Commission file
-number: ..."), which then read as a false mismatch. Fixed: the cover page
-is now exempted from boilerplate stripping. A second, unrelated failure
-mode was found alongside it and given its own guard rather than "fixed":
+number: ..."), which then read as a false mismatch. Fixed (confirmed live
+in `cleaning.py` as of 2026-08-10): the cover page is now exempted from
+boilerplate stripping. A second, unrelated failure mode was found alongside
+it and given its own guard rather than "fixed":
 biotelemetry-inc/NASDAQ_BEAT_2017.pdf's registrant name is genuinely absent
 from pdfplumber's raw cover-page text (checked directly, not a cleaning.py
 artifact -- likely a corrupted font on that specific PDF), so
@@ -161,11 +224,11 @@ Checked against real data from this project rather than deciding from
 theory:
 
 - **Table/numeric-block fragmentation is real and common.** Across the
-  300-doc `output_batch` run: 16.6% of all `chunks_word_count` chunks are
-  `likely_numeric_dense`, and 61.7% of those have a numeric-dense chunk
-  immediately adjacent to them -- strong evidence that most numeric/table
-  content currently gets split across a chunk boundary by the plain
-  word-count splitter.
+  300-doc `output_batch` run available at the time: 16.6% of all
+  `chunks_word_count` chunks are `likely_numeric_dense`, and 61.7% of those
+  have a numeric-dense chunk immediately adjacent to them -- strong
+  evidence that most numeric/table content currently gets split across a
+  chunk boundary by the plain word-count splitter.
 - **Page-based chunking would not reliably fix that.** Measured real body
   page word counts (1-800-flowerscom, blackbaud-inc samples): min 0, max
   1124, stdev 310, vs. the current word-count chunker's output: mean 376,
@@ -221,11 +284,10 @@ chunking of the same document, so sharing one id scheme would collide
 were ever mixed into one index, and structure chunks aren't the saved/
 production chunk set (see Open items below).
 
-This has NOT been run across the 300-doc batch yet -- `output_batch/`
-still reflects the pre-chunk_index run. Needs a full batch rebuild
-(`output_batch/` deleted, `run_batch.py` rerun) before chunk_index is
-actually present in the saved corpus output, same as the cover-page fix
-above.
+**Status as of 2026-08-10: this has now been run at scale.** The 1,819-file
+`output_batch/` in current use has `chunk_index` populated on every
+`chunks_word_count` record -- confirmed by direct inspection, not assumed.
+See the status section at the top of this file.
 
 ## Metadata schema audit (2026-07-28)
 
@@ -287,7 +349,10 @@ citation vs. nothing). Decisions:
   `.PDF` instead of `.pdf` -- neither breaks the current ticker regex, but
   the `.PDF` case would make a case-sensitive glob (e.g.
   `check_mismatch_only.py`'s `*.pdf` pattern) silently skip those files on
-  a non-Windows filesystem.
+  a non-Windows filesystem. Separately confirmed 2026-08-10: this same
+  `NASDAQ_`-only assumption also means non-NASDAQ files (AMEX/TSX/NYSE,
+  5 confirmed in the current `output_batch`) get `ticker=None` -- see
+  status section above.
 
 Verified via single-document tests (NASDAQ_FLWS_2019.pdf,
 NASDAQ_BLKB_2018.pdf), not a batch run, per instruction.
@@ -297,22 +362,28 @@ NASDAQ_BLKB_2018.pdf), not a batch run, per instruction.
 `run_batch.py` can now source its file list from `mismatch_check.csv`
 instead of `corpus_profile.csv`'s 300-file sample (`--source mismatch`),
 scoping a full-pipeline chunking run to exactly the files a prior
-`check_mismatch_only.py` pass already covered (~3,324 files at time of
-writing, ~33% of the corpus). Files `check_mismatch_only.py` already
-flagged as broken (its own `error` column, e.g. "Unexpected EOF" --
-confirmed 34/3324 = 1.0% of that file, a higher corruption rate than the
-1/300 seen in `corpus_profile.csv`'s smaller sample) are skipped the same
-way `corpus_profile.csv`'s preflagged errors already were -- never sent
-through the actual chunking pipeline, just logged as `preflagged_error` in
-`batch_results.csv`. `company_name_mismatch` is NOT reused from
-`mismatch_check.csv` -- `run_one()` recomputes it fresh as a normal side
-effect of chunking (cheap; PDF extraction is the real cost and happens
-regardless), avoiding any risk of the value going stale relative to
+`check_mismatch_only.py` pass already covered. Files `check_mismatch_only.py`
+already flagged as broken (its own `error` column, e.g. "Unexpected EOF")
+are skipped the same way `corpus_profile.csv`'s preflagged errors already
+were -- never sent through the actual chunking pipeline, just logged as
+`preflagged_error` in `batch_results.csv`. `company_name_mismatch` is NOT
+reused from `mismatch_check.csv` -- `run_one()` recomputes it fresh as a
+normal side effect of chunking (cheap; PDF extraction is the real cost and
+happens regardless), avoiding any risk of the value going stale relative to
 whatever cleaning.py/metadata.py logic is current when the full batch
 actually runs. Verified with `--limit 2`: preflagged rows correctly
 skipped, both real files processed correctly (chunk counts match prior
-known values for these files). Full 3,324-file run not executed here --
-user is running it locally.
+known values for these files).
+
+**Coverage number corrected 2026-08-10**: the "~3,324 files, ~33% of
+corpus" estimate below was never actually verified against the real file
+and is wrong. Checked directly: `mismatch_check.csv` itself only has 299
+rows. A separately-named file, `mismatch_check - Copy.csv`, has 2,036 rows
+(20.7% of the 9,851-file corpus) and is what's actually intended as the
+`--source mismatch` file list going forward (see status section at top).
+The two files do not overlap at all -- they're separate runs, not
+snapshots of one growing file. The 1.0%-corruption-rate figure below was
+computed against the wrong denominator as a result; not re-verified here.
 
 ## Open items
 
@@ -327,7 +398,20 @@ user is running it locally.
   for every document but only sampled (first 5) in the output JSON, unlike
   `chunks_word_count` which is saved in full -- revisit if the full
   structure-chunk set needs review too.
-- `output_batch/` (300-doc run) predates both the cover-page
+- ~~`output_batch/` (300-doc run) predates both the cover-page
   boilerplate-stripping fix and the `chunk_index` field -- needs a full
-  rebuild before either is reflected in the actual corpus output. Deferred
-  per instruction not to run it yet.
+  rebuild~~ **RESOLVED 2026-08-10, see status section at top**: a
+  1,819-file, post-fix `output_batch/` exists and is in production use.
+  The provenance gap (1,819 files vs. 300 logged rows) and the
+  `mismatch_check - Copy.csv` coverage/overlap findings above are the new
+  open items in its place.
+- `corpus_profile.csv` (300-file random sample) is being deprecated as
+  `run_batch.py`'s file-list source in favor of `mismatch_check - Copy.csv`
+  (2,036 files, 20.7% of corpus) -- per direct instruction, 2026-08-10.
+  Not yet done: `mismatch_check - Copy.csv` needs to physically be back in
+  this folder (or `run_batch.py`'s `--mismatch-csv` default needs to point
+  at wherever it lives) before `--source mismatch` can actually use it.
+  `corpus_profile.csv` and `rag/dataset/profile_corpus.py` still exist and
+  still work for corpus-wide profiling stats (ticker length distribution,
+  etc.) -- "eliminate" has not yet been scoped to mean delete the file vs.
+  just stop using it as the default batch source.

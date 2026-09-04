@@ -1,4 +1,18 @@
-# Environment
+.cursor/
+frontend/docs/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Environment / credentials
 .env
 .env.local
 .env.example
@@ -14,8 +28,24 @@ __pycache__/
 *.egg-info/
 .pytest_cache/
 *.whl
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+.pytest_cache/
+*.whl
 dist/
 build/
+
+# Data / outputs
+data/
+output/
+output_batch/
+
+# Frontend
+frontend/docs/
 
 # Data / outputs
 data/
@@ -49,3 +79,15 @@ $RECYCLE.BIN/
 *.swp
 *.swo
 *~
+
+# RAG pipeline generated files
+rag/dataset/corpus_profile.csv
+rag/ingestion/output/
+rag/embeddings/
+
+# Pre-processing generated files
+pre_procesing_2/output_batch/
+pre_procesing_2/mismatch_check.csv
+
+# Downloaded / generated
+downolad_files/corpus_profile.csv
