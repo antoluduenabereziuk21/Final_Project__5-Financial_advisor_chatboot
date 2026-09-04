@@ -1,0 +1,28 @@
+# Additional dependencies for RAGAS/run_ragas_eval.py, on top of what
+# rag/requirements.txt and backend/requirements.txt already install.
+# Install into the SAME venv that already runs the backend/rag code
+# (rag/.venv), so `rag.*` and `app.*` imports resolve correctly:
+#
+#   rag\.venv\Scripts\python.exe -m pip install -r RAGAS\requirements_eval.txt
+
+# greenlet is a transitive dependency (pulled in via langchain/sqlalchemy).
+# greenlet>=3.3 dropped Python 3.9 support entirely (confirmed in its own
+# changelog) and ships no prebuilt wheel for cp39 -- pip falls back to a
+# source build, which needs the MSVC C++ toolchain and fails without it.
+# 3.2.5 is the last 3.9-compatible release and has a win_amd64 cp39 wheel
+# on PyPI, so pinning below 3.3 avoids the source build entirely. If this
+# venv is ever moved to Python 3.10+, this pin can be dropped.
+greenlet<3.3
+
+ragas>=0.2,<0.4
+langchain-groq>=0.2
+langchain-huggingface>=0.1
+pandas>=2.0
+
+# Judge model runs on Google Gemini now, not Groq or Cerebras (see
+# run_ragas_eval.py's JUDGE_MODEL comment for the full history: Groq's
+# TPD wall across two projects, then Cerebras' free tier not actually
+# activating -- $0.00 balance despite a verified payment method on
+# file). Needs GEMINI_API_KEY (aistudio.google.com/apikey, no card
+# required for the key itself).
+langchain-google-genai
